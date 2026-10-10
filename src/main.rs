@@ -5,7 +5,7 @@ mod theme;
 mod tools;
 mod ui;
 
-use eframe::egui::{self, Margin, Pos2};
+use eframe::egui::{self, Margin};
 use canvas::{render_canvas, CanvasAction, ViewportState};
 use image_converter::{convert_image_to_ascii, convert_image_to_braille, render_grid_to_png};
 use model::{CanvasGrid, HistoryManager};
@@ -245,6 +245,57 @@ impl eframe::App for AsciiPaintApp {
 
         self.handle_keyboard_shortcuts(&ctx);
 
+        // --- Top Menu Panel ---
+        let mut menu_action = None;
+        egui::Panel::top("top_panel")
+            .frame(
+                egui::Frame::new()
+                    .fill(theme_colors.panel_bg)
+                    .stroke(egui::Stroke::new(1.0, theme_colors.panel_border))
+                    .inner_margin(Margin::symmetric(8, 4)),
+            )
+            .exact_size(40.0)
+            .show(ui, |ui| {
+                menu_action = render_top_menu(
+                    ui,
+                    &theme_colors,
+                    self.history.can_undo(),
+                    self.history.can_redo(),
+                );
+            });
+
+        // --- Bottom Status Bar Panel ---
+        egui::Panel::bottom("bottom_panel")
+            .frame(
+                egui::Frame::new()
+                    .fill(theme_colors.panel_bg)
+                    .stroke(egui::Stroke::new(1.0, theme_colors.panel_border))
+                    .inner_margin(Margin::symmetric(10, 4)),
+            )
+            .exact_size(32.0)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    render_status_bar(ui, &self.grid, &self.viewport, &theme_colors);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        render_scene_controls(ui, &mut self.viewport, &theme_colors);
+                    });
+                });
+            });
+
+        // --- Left Toolbar Panel ---
+        egui::Panel::left("left_toolbar_panel")
+            .frame(
+                egui::Frame::new()
+                    .fill(theme_colors.panel_bg)
+                    .stroke(egui::Stroke::new(1.0, theme_colors.panel_border))
+                    .inner_margin(Margin::symmetric(6, 8)),
+            )
+            .resizable(false)
+            .exact_size(46.0)
+            .show(ui, |ui| {
+                render_left_toolbar(ui, &mut self.tools, &theme_colors);
+            });
+
         // --- Right Sidebar Panel ---
         let mut sidebar_actions = Vec::new();
         egui::Panel::right("right_panel")
@@ -268,12 +319,10 @@ impl eframe::App for AsciiPaintApp {
 
         // --- Central Panel (Workspace and Canvas) ---
         let mut canvas_actions = Vec::new();
-        let mut menu_action = None;
-
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(theme_colors.bg_workspace))
             .show(ui, |ui| {
-                // Render Canvas
+                // Render Canvas inside ScrollArea
                 canvas_actions = render_canvas(
                     ui,
                     &self.grid,
@@ -281,44 +330,6 @@ impl eframe::App for AsciiPaintApp {
                     &mut self.viewport,
                     &theme_colors,
                 );
-
-                // Top Floating Menu
-                egui::Area::new(egui::Id::new("top_menu_area"))
-                    .fixed_pos(Pos2::new(16.0, 16.0))
-                    .order(egui::Order::Foreground)
-                    .show(&ctx, |ui| {
-                        menu_action = render_top_menu(
-                            ui,
-                            &theme_colors,
-                            self.history.can_undo(),
-                            self.history.can_redo(),
-                        );
-                    });
-
-                // Left Floating Toolbar
-                egui::Area::new(egui::Id::new("left_toolbar_area"))
-                    .fixed_pos(Pos2::new(16.0, 80.0))
-                    .order(egui::Order::Foreground)
-                    .show(&ctx, |ui| {
-                        render_left_toolbar(ui, &mut self.tools, &theme_colors);
-                    });
-
-                // Bottom Floating Scene Controls
-                let screen = ctx.input(|i| i.viewport_rect());
-                egui::Area::new(egui::Id::new("bottom_scene_controls"))
-                    .fixed_pos(Pos2::new(screen.max.x - 420.0, screen.max.y - 56.0))
-                    .order(egui::Order::Foreground)
-                    .show(&ctx, |ui| {
-                        render_scene_controls(ui, &mut self.viewport, &theme_colors);
-                    });
-
-                // Bottom Status Bar
-                egui::Area::new(egui::Id::new("bottom_status_bar"))
-                    .fixed_pos(Pos2::new(16.0, screen.max.y - 48.0))
-                    .order(egui::Order::Foreground)
-                    .show(&ctx, |ui| {
-                        render_status_bar(ui, &self.grid, &self.viewport, &theme_colors);
-                    });
             });
 
         // --- Process Menu Actions ---

@@ -4,6 +4,7 @@ use crate::theme::ThemeColors;
 use crate::tools::{Tool, ToolState};
 
 pub struct ViewportState {
+    #[allow(dead_code)]
     pub pan_offset: Vec2,
     pub zoom: f32,
     pub cell_w: f32,
@@ -107,222 +108,217 @@ pub fn render_canvas(
 ) -> Vec<CanvasAction> {
     let mut actions = Vec::new();
 
-    let available_rect = ui.available_rect_before_wrap();
     let cell_size = state.effective_cell_size();
     let canvas_size = Vec2::new(grid.width as f32 * cell_size.x, grid.height as f32 * cell_size.y);
+    let margin = 50.0;
 
-    let canvas_min = available_rect.min + state.pan_offset;
-    let canvas_rect = Rect::from_min_size(canvas_min, canvas_size);
+    egui::ScrollArea::both()
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            let viewport_size = ui.available_size();
+            let content_w = (canvas_size.x + margin * 2.0).max(viewport_size.x);
+            let content_h = (canvas_size.y + margin * 2.0).max(viewport_size.y);
+            let total_content_size = Vec2::new(content_w, content_h);
 
-    let (response, painter) = ui.allocate_painter(available_rect.size(), Sense::click_and_drag());
+            let (response, painter) = ui.allocate_painter(total_content_size, Sense::click_and_drag());
 
-    // Mouse wheel zooming
-    let scroll_delta = ui.input(|i| i.smooth_scroll_delta);
-    if scroll_delta.y != 0.0 && response.hovered() {
-        let zoom_change = scroll_delta.y * 0.0015;
-        let old_zoom = state.zoom;
-        state.zoom = (state.zoom + zoom_change).clamp(0.25, 4.0);
+            let offset_x = margin.max((viewport_size.x - canvas_size.x) / 2.0);
+            let offset_y = margin.max((viewport_size.y - canvas_size.y) / 2.0);
+            let canvas_min = response.rect.min + Vec2::new(offset_x, offset_y);
+            let canvas_rect = Rect::from_min_size(canvas_min, canvas_size);
 
-        if let Some(pointer_pos) = ui.input(|i| i.pointer.hover_pos()) {
-            let rel = pointer_pos - canvas_rect.min;
-            let ratio = state.zoom / old_zoom;
-            state.pan_offset += rel * (1.0 - ratio);
-        }
-    }
-
-    // Panning with Space + Left Click or Hand Tool
-    let space_down = ui.input(|i| i.key_down(egui::Key::Space));
-    let pointer = ui.input(|i| i.pointer.clone());
-    let middle_down = pointer.button_down(egui::PointerButton::Middle);
-    let middle_clicked = pointer.button_clicked(egui::PointerButton::Middle);
-    let primary_down = pointer.primary_down();
-    let secondary_down = pointer.button_down(egui::PointerButton::Secondary);
-    let secondary_clicked = pointer.secondary_clicked();
-
-    let is_pan_active = (tools.current_tool == Tool::Scroll && primary_down) || (space_down && primary_down);
-    if is_pan_active {
-        if let Some(curr) = pointer.hover_pos() {
-            if let Some(last) = state.last_drag_pos {
-                let delta = curr - last;
-                state.pan_offset += delta;
-            }
-            state.last_drag_pos = Some(curr);
-            state.is_panning = true;
-        }
-    } else {
-        state.last_drag_pos = pointer.hover_pos();
-        state.is_panning = false;
-    }
-
-    // Drop shadow under canvas
-    let shadow_rect = canvas_rect.expand(4.0);
-    painter.rect_filled(shadow_rect, 4.0, theme.shadow);
-
-    // Canvas background
-    painter.rect_filled(canvas_rect, 0.0, theme.canvas_bg);
-
-    // Determine hovered cell
-    let mouse_pos = pointer.hover_pos();
-    state.hovered_cell = mouse_pos.and_then(|pos| state.screen_to_cell(pos, canvas_rect, grid.width, grid.height));
-
-    // Handle tool interactions
-    if let Some((col, row)) = state.hovered_cell {
-        if tools.current_tool == Tool::Zoom {
-            ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::ZoomIn);
-            if pointer.primary_clicked() {
-                let old_zoom = state.zoom;
-                state.zoom = (state.zoom * 1.5).min(5.0);
-                if let Some(pos) = pointer.hover_pos() {
-                    let rel = pos - canvas_rect.min;
-                    let ratio = state.zoom / old_zoom;
-                    state.pan_offset += rel * (1.0 - ratio);
-                }
-            } else if pointer.secondary_clicked() && !ui.input(|i| i.modifiers.shift) {
-                let old_zoom = state.zoom;
-                state.zoom = (state.zoom / 1.5).max(0.25);
-                if let Some(pos) = pointer.hover_pos() {
-                    let rel = pos - canvas_rect.min;
-                    let ratio = state.zoom / old_zoom;
-                    state.pan_offset += rel * (1.0 - ratio);
+            // Ctrl + Mouse wheel zooming
+            let ctrl_down = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
+            if ctrl_down && response.hovered() {
+                let scroll_delta = ui.input(|i| i.smooth_scroll_delta);
+                if scroll_delta.y != 0.0 {
+                    let zoom_change = scroll_delta.y * 0.0015;
+                    state.zoom = (state.zoom + zoom_change).clamp(0.25, 5.0);
                 }
             }
-        } else if (middle_clicked || middle_down) && !state.is_panning {
-            // Middle-click always acts as Pipette
-            if let Some(ch) = grid.get(col, row) {
-                actions.push(CanvasAction::PipetteSampled(ch));
-            }
-        } else if secondary_down && !state.is_panning {
-            // Right-click always acts as Eraser
-            if !state.is_dragging_stroke {
-                state.is_dragging_stroke = true;
-                actions.push(CanvasAction::StrokeStarted);
-            }
-            actions.push(CanvasAction::CellPainted(col, row, ' '));
-        } else if primary_down && !state.is_panning {
-            if !state.is_dragging_stroke {
-                state.is_dragging_stroke = true;
-                actions.push(CanvasAction::StrokeStarted);
 
-                match tools.current_tool {
-                    Tool::Fill => {
-                        actions.push(CanvasAction::FloodFill(col, row));
+            // Panning with Space + Left Click or Hand Tool
+            let space_down = ui.input(|i| i.key_down(egui::Key::Space));
+            let pointer = ui.input(|i| i.pointer.clone());
+            let middle_down = pointer.button_down(egui::PointerButton::Middle);
+            let middle_clicked = pointer.button_clicked(egui::PointerButton::Middle);
+            let primary_down = pointer.primary_down();
+            let secondary_down = pointer.button_down(egui::PointerButton::Secondary);
+            let secondary_clicked = pointer.secondary_clicked();
+
+            let is_pan_active = (tools.current_tool == Tool::Scroll && primary_down) || (space_down && primary_down);
+            if is_pan_active {
+                ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Grabbing);
+                if let Some(curr) = pointer.hover_pos() {
+                    if let Some(last) = state.last_drag_pos {
+                        let delta = curr - last;
+                        ui.scroll_with_delta(delta);
                     }
-                    Tool::Pipette => {
-                        if let Some(ch) = grid.get(col, row) {
-                            actions.push(CanvasAction::PipetteSampled(ch));
-                        }
-                    }
-                    Tool::Select => {
-                        state.selection_drag_start = Some((col, row));
-                        state.selection = Some(RectBounds::new(col, row, col, row));
-                    }
-                    Tool::Pencil => {
-                        actions.push(CanvasAction::CellPainted(col, row, tools.brush_char));
-                    }
-                    Tool::Eraser => {
-                        actions.push(CanvasAction::CellPainted(col, row, ' '));
-                    }
-                    Tool::Scroll | Tool::Zoom => {}
+                    state.last_drag_pos = Some(curr);
+                    state.is_panning = true;
                 }
             } else {
-                // Continued drag
-                match tools.current_tool {
-                    Tool::Pencil => {
-                        actions.push(CanvasAction::CellPainted(col, row, tools.brush_char));
+                state.last_drag_pos = pointer.hover_pos();
+                state.is_panning = false;
+            }
+
+            // Drop shadow under canvas
+            let shadow_rect = canvas_rect.expand(4.0);
+            painter.rect_filled(shadow_rect, 4.0, theme.shadow);
+
+            // Canvas background
+            painter.rect_filled(canvas_rect, 0.0, theme.canvas_bg);
+
+            // Determine hovered cell
+            let mouse_pos = pointer.hover_pos();
+            state.hovered_cell = mouse_pos.and_then(|pos| state.screen_to_cell(pos, canvas_rect, grid.width, grid.height));
+
+            // Handle tool interactions
+            if let Some((col, row)) = state.hovered_cell {
+                if tools.current_tool == Tool::Zoom {
+                    ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::ZoomIn);
+                    if pointer.primary_clicked() {
+                        state.zoom = (state.zoom * 1.5).min(5.0);
+                    } else if pointer.secondary_clicked() && !ui.input(|i| i.modifiers.shift) {
+                        state.zoom = (state.zoom / 1.5).max(0.25);
                     }
-                    Tool::Eraser => {
-                        actions.push(CanvasAction::CellPainted(col, row, ' '));
+                } else if (middle_clicked || middle_down) && !state.is_panning {
+                    // Middle-click always acts as Pipette
+                    if let Some(ch) = grid.get(col, row) {
+                        actions.push(CanvasAction::PipetteSampled(ch));
                     }
-                    Tool::Select => {
-                        if let Some((start_c, start_r)) = state.selection_drag_start {
-                            state.selection = Some(RectBounds::new(start_c, start_r, col, row));
+                } else if secondary_down && !state.is_panning {
+                    // Right-click always acts as Eraser
+                    if !state.is_dragging_stroke {
+                        state.is_dragging_stroke = true;
+                        actions.push(CanvasAction::StrokeStarted);
+                    }
+                    actions.push(CanvasAction::CellPainted(col, row, ' '));
+                } else if primary_down && !state.is_panning {
+                    if !state.is_dragging_stroke {
+                        state.is_dragging_stroke = true;
+                        actions.push(CanvasAction::StrokeStarted);
+
+                        match tools.current_tool {
+                            Tool::Fill => {
+                                actions.push(CanvasAction::FloodFill(col, row));
+                            }
+                            Tool::Pipette => {
+                                if let Some(ch) = grid.get(col, row) {
+                                    actions.push(CanvasAction::PipetteSampled(ch));
+                                }
+                            }
+                            Tool::Select => {
+                                state.selection_drag_start = Some((col, row));
+                                state.selection = Some(RectBounds::new(col, row, col, row));
+                            }
+                            Tool::Pencil => {
+                                actions.push(CanvasAction::CellPainted(col, row, tools.brush_char));
+                            }
+                            Tool::Eraser => {
+                                actions.push(CanvasAction::CellPainted(col, row, ' '));
+                            }
+                            Tool::Scroll | Tool::Zoom => {}
+                        }
+                    } else {
+                        // Continued drag
+                        match tools.current_tool {
+                            Tool::Pencil => {
+                                actions.push(CanvasAction::CellPainted(col, row, tools.brush_char));
+                            }
+                            Tool::Eraser => {
+                                actions.push(CanvasAction::CellPainted(col, row, ' '));
+                            }
+                            Tool::Select => {
+                                if let Some((start_c, start_r)) = state.selection_drag_start {
+                                    state.selection = Some(RectBounds::new(start_c, start_r, col, row));
+                                }
+                            }
+                            _ => {}
                         }
                     }
-                    _ => {}
                 }
             }
-        }
-    }
 
-    if !primary_down && !secondary_down && !middle_down {
-        state.is_dragging_stroke = false;
-        state.selection_drag_start = None;
-    }
-
-    // Context menu trigger (Shift + Right-click)
-    if secondary_clicked && ui.input(|i| i.modifiers.shift) {
-        if let Some(pos) = mouse_pos {
-            state.show_context_menu = true;
-            state.context_menu_pos = pos;
-            state.context_menu_cell = state.hovered_cell;
-        }
-    }
-
-    // Visible cell frustum clipping to optimize rendering
-    let font_size = (12.0 * state.zoom).clamp(6.0, 48.0);
-    let font_id = egui::FontId::monospace(font_size);
-
-    for row in 0..grid.height {
-        let cell_y = canvas_rect.min.y + row as f32 * cell_size.y;
-        if cell_y + cell_size.y < available_rect.min.y || cell_y > available_rect.max.y {
-            continue;
-        }
-
-        for col in 0..grid.width {
-            let cell_x = canvas_rect.min.x + col as f32 * cell_size.x;
-            if cell_x + cell_size.x < available_rect.min.x || cell_x > available_rect.max.x {
-                continue;
+            if !primary_down && !secondary_down && !middle_down {
+                state.is_dragging_stroke = false;
+                state.selection_drag_start = None;
             }
 
-            let cell_rect = Rect::from_min_size(Pos2::new(cell_x, cell_y), cell_size);
-
-            // Draw cell background
-            let is_hovered = state.hovered_cell == Some((col, row));
-            let is_selected = state.selection.map_or(false, |b| b.contains(col, row));
-
-            let bg_color = if is_selected {
-                theme.cell_selected
-            } else if is_hovered {
-                theme.cell_hover
-            } else {
-                theme.cell_bg
-            };
-
-            painter.rect_filled(cell_rect, 0.0, bg_color);
-            painter.rect_stroke(cell_rect, 0.0, Stroke::new(0.5, theme.cell_border), egui::StrokeKind::Outside);
-
-            // Draw character
-            let idx = row * grid.width + col;
-            let ch = grid.cells[idx];
-            if ch != ' ' {
-                let text = ch.to_string();
-                let text_pos = cell_rect.center();
-                painter.text(
-                    text_pos,
-                    egui::Align2::CENTER_CENTER,
-                    text,
-                    font_id.clone(),
-                    theme.text_primary,
-                );
+            // Context menu trigger (Shift + Right-click)
+            if secondary_clicked && ui.input(|i| i.modifiers.shift) {
+                if let Some(pos) = mouse_pos {
+                    state.show_context_menu = true;
+                    state.context_menu_pos = pos;
+                    state.context_menu_cell = state.hovered_cell;
+                }
             }
-        }
-    }
 
-    // Selection border overlay
-    if let Some(sel) = state.selection {
-        let top_left = state.cell_rect(sel.min_x, sel.min_y, canvas_rect);
-        let bottom_right = state.cell_rect(sel.max_x, sel.max_y, canvas_rect);
-        let sel_rect = Rect::from_min_max(top_left.min, bottom_right.max);
-        painter.rect_stroke(sel_rect, 0.0, Stroke::new(1.5, theme.accent), egui::StrokeKind::Outside);
-    }
+            // Visible cell frustum clipping to optimize rendering
+            let font_size = (12.0 * state.zoom).clamp(6.0, 48.0);
+            let font_id = egui::FontId::monospace(font_size);
+            let clip = ui.clip_rect();
 
-    // Draw 4-side [+] and [-] border controls matching reference
-    render_side_controls(ui, &mut actions, canvas_rect, theme);
+            for row in 0..grid.height {
+                let cell_y = canvas_rect.min.y + row as f32 * cell_size.y;
+                if cell_y + cell_size.y < clip.min.y || cell_y > clip.max.y {
+                    continue;
+                }
 
-    // Draw Context Menu if active
-    if state.show_context_menu {
-        render_context_menu(ui, state, &mut actions, theme);
-    }
+                for col in 0..grid.width {
+                    let cell_x = canvas_rect.min.x + col as f32 * cell_size.x;
+                    if cell_x + cell_size.x < clip.min.x || cell_x > clip.max.x {
+                        continue;
+                    }
+
+                    let cell_rect = Rect::from_min_size(Pos2::new(cell_x, cell_y), cell_size);
+
+                    let is_hovered = state.hovered_cell == Some((col, row));
+                    let is_selected = state.selection.map_or(false, |b| b.contains(col, row));
+
+                    let bg_color = if is_selected {
+                        theme.cell_selected
+                    } else if is_hovered {
+                        theme.cell_hover
+                    } else {
+                        theme.cell_bg
+                    };
+
+                    painter.rect_filled(cell_rect, 0.0, bg_color);
+                    painter.rect_stroke(cell_rect, 0.0, Stroke::new(0.5, theme.cell_border), egui::StrokeKind::Outside);
+
+                    let idx = row * grid.width + col;
+                    let ch = grid.cells[idx];
+                    if ch != ' ' {
+                        let text = ch.to_string();
+                        let text_pos = cell_rect.center();
+                        painter.text(
+                            text_pos,
+                            egui::Align2::CENTER_CENTER,
+                            text,
+                            font_id.clone(),
+                            theme.text_primary,
+                        );
+                    }
+                }
+            }
+
+            // Selection border overlay
+            if let Some(sel) = state.selection {
+                let top_left = state.cell_rect(sel.min_x, sel.min_y, canvas_rect);
+                let bottom_right = state.cell_rect(sel.max_x, sel.max_y, canvas_rect);
+                let sel_rect = Rect::from_min_max(top_left.min, bottom_right.max);
+                painter.rect_stroke(sel_rect, 0.0, Stroke::new(1.5, theme.accent), egui::StrokeKind::Outside);
+            }
+
+            // Draw 4-side [+] and [-] border controls matching reference
+            render_side_controls(ui, &mut actions, canvas_rect, theme);
+
+            // Draw Context Menu if active
+            if state.show_context_menu {
+                render_context_menu(ui, state, &mut actions, theme);
+            }
+        });
 
     actions
 }
@@ -338,7 +334,8 @@ fn render_side_controls(
     // Helper for circular button
     let mut draw_btn = |center: Pos2, text: &'static str, dir: Direction, is_add: bool| {
         let rect = Rect::from_center_size(center, btn_size);
-        let resp = ui.allocate_rect(rect, Sense::click());
+        let id = ui.make_persistent_id(format!("side_btn_{}_{:?}", text, dir));
+        let resp = ui.interact(rect, id, Sense::click());
         let is_hover = resp.hovered();
         let bg = if is_hover { theme.button_hover } else { theme.panel_bg };
         ui.painter().rect_filled(rect, 13.0, bg);

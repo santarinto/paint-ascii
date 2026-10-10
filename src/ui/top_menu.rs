@@ -1,4 +1,4 @@
-use eframe::egui::{self, Color32, CornerRadius, Sense, Stroke, Vec2};
+use eframe::egui::{self, Color32, Sense, Vec2};
 use crate::theme::ThemeColors;
 
 pub enum MenuAction {
@@ -22,21 +22,10 @@ pub fn render_top_menu(
 ) -> Option<MenuAction> {
     let mut triggered_action = None;
 
-    egui::Frame::new()
-        .fill(theme.panel_bg)
-        .stroke(Stroke::new(1.0, theme.panel_border))
-        .corner_radius(CornerRadius {
-            nw: 0,
-            ne: 0,
-            sw: 0,
-            se: 16,
-        })
-        .inner_margin(egui::Margin::symmetric(8, 4))
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing = Vec2::new(4.0, 0.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing = Vec2::new(4.0, 0.0);
 
-                let mut btn = |icon: &'static str, tooltip: &'static str, enabled: bool| -> bool {
+        let mut btn = |icon: &'static str, tooltip: &'static str, enabled: bool| -> bool {
                     let btn_size = Vec2::new(32.0, 32.0);
                     let (rect, resp) = ui.allocate_exact_size(btn_size, Sense::click());
                     let is_hover = resp.hovered() && enabled;
@@ -96,7 +85,6 @@ pub fn render_top_menu(
                     triggered_action = Some(MenuAction::ToggleTheme);
                 }
             });
-        });
 
     triggered_action
 }
