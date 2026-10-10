@@ -130,14 +130,17 @@ pub fn render_canvas(
         }
     }
 
-    // Panning with Middle Click or Hand Tool
+    // Panning with Space + Left Click or Hand Tool
+    let space_down = ui.input(|i| i.key_down(egui::Key::Space));
     let pointer = ui.input(|i| i.pointer.clone());
     let middle_down = pointer.button_down(egui::PointerButton::Middle);
+    let middle_clicked = pointer.button_clicked(egui::PointerButton::Middle);
     let primary_down = pointer.primary_down();
     let secondary_down = pointer.button_down(egui::PointerButton::Secondary);
     let secondary_clicked = pointer.secondary_clicked();
 
-    if middle_down || (tools.current_tool == Tool::Scroll && primary_down) {
+    let is_pan_active = (tools.current_tool == Tool::Scroll && primary_down) || (space_down && primary_down);
+    if is_pan_active {
         if let Some(curr) = pointer.hover_pos() {
             if let Some(last) = state.last_drag_pos {
                 let delta = curr - last;
@@ -164,7 +167,12 @@ pub fn render_canvas(
 
     // Handle tool interactions
     if let Some((col, row)) = state.hovered_cell {
-        if secondary_down && !state.is_panning {
+        if (middle_clicked || middle_down) && !state.is_panning {
+            // Middle-click always acts as Pipette
+            if let Some(ch) = grid.get(col, row) {
+                actions.push(CanvasAction::PipetteSampled(ch));
+            }
+        } else if secondary_down && !state.is_panning {
             // Right-click always acts as Eraser
             if !state.is_dragging_stroke {
                 state.is_dragging_stroke = true;
@@ -217,7 +225,7 @@ pub fn render_canvas(
         }
     }
 
-    if !primary_down && !secondary_down {
+    if !primary_down && !secondary_down && !middle_down {
         state.is_dragging_stroke = false;
         state.selection_drag_start = None;
     }
