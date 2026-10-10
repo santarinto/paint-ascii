@@ -1,7 +1,11 @@
 mod model;
+mod theme;
+mod tools;
 
 use eframe::egui;
 use model::CanvasGrid;
+use theme::AppTheme;
+use tools::{Tool, ToolState};
 
 struct AsciiPaintApp {
     grid: CanvasGrid,
