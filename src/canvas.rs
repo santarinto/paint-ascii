@@ -134,6 +134,7 @@ pub fn render_canvas(
     let pointer = ui.input(|i| i.pointer.clone());
     let middle_down = pointer.button_down(egui::PointerButton::Middle);
     let primary_down = pointer.primary_down();
+    let secondary_down = pointer.button_down(egui::PointerButton::Secondary);
     let secondary_clicked = pointer.secondary_clicked();
 
     if middle_down || (tools.current_tool == Tool::Scroll && primary_down) {
@@ -163,7 +164,14 @@ pub fn render_canvas(
 
     // Handle tool interactions
     if let Some((col, row)) = state.hovered_cell {
-        if primary_down && !state.is_panning {
+        if secondary_down && !state.is_panning {
+            // Right-click always acts as Eraser
+            if !state.is_dragging_stroke {
+                state.is_dragging_stroke = true;
+                actions.push(CanvasAction::StrokeStarted);
+            }
+            actions.push(CanvasAction::CellPainted(col, row, ' '));
+        } else if primary_down && !state.is_panning {
             if !state.is_dragging_stroke {
                 state.is_dragging_stroke = true;
                 actions.push(CanvasAction::StrokeStarted);
@@ -209,13 +217,13 @@ pub fn render_canvas(
         }
     }
 
-    if !primary_down {
+    if !primary_down && !secondary_down {
         state.is_dragging_stroke = false;
         state.selection_drag_start = None;
     }
 
-    // Right-click context menu trigger
-    if secondary_clicked {
+    // Context menu trigger (Shift + Right-click)
+    if secondary_clicked && ui.input(|i| i.modifiers.shift) {
         if let Some(pos) = mouse_pos {
             state.show_context_menu = true;
             state.context_menu_pos = pos;
