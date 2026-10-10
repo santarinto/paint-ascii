@@ -20,6 +20,9 @@ pub struct RightSidebarState {
     pub img_brightness: f32,
     pub img_contrast: f32,
     pub img_palette_str: String,
+    // Favorites
+    pub favorites: Vec<char>,
+    pub add_favorite_input: String,
     // Export PNG
     pub png_w_str: String,
     pub png_h_str: String,
@@ -42,6 +45,8 @@ impl Default for RightSidebarState {
             img_brightness: 0.0,
             img_contrast: 0.0,
             img_palette_str: " .:-=+*#%@".to_string(),
+            favorites: vec!['█', '▓', '▒', '░', '│', '─', '┌', '┐', '└', '┘', '#', '*', ' '],
+            add_favorite_input: String::new(),
             png_w_str: "800".to_string(),
             png_h_str: "600".to_string(),
             png_proportional: true,
@@ -58,6 +63,7 @@ pub enum SidebarAction {
     ConvertImgToAscii,
     ConvertImgToBraille,
     SavePng(usize, usize),
+    PasteFavoritesFromClipboard,
 }
 
 pub fn render_right_sidebar(
@@ -70,8 +76,94 @@ pub fn render_right_sidebar(
     let mut actions = Vec::new();
 
     egui::ScrollArea::vertical().show(ui, |ui| {
-        ui.set_width(295.0);
+        ui.set_width(365.0);
         ui.spacing_mut().item_spacing = Vec2::new(0.0, 8.0);
+
+        // --- Favorites (Избранное / Сборное) ---
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("⭐ Избранное").strong().color(theme.text_primary));
+            if ui.small_button("+ Кисть").on_hover_text("Добавить текущую кисть в избранное").clicked() {
+                if !state.favorites.contains(&tools.brush_char) {
+                    state.favorites.push(tools.brush_char);
+                }
+            }
+            if ui.small_button("📋 Вставить").on_hover_text("Вставить символы из буфера обмена в избранное").clicked() {
+                actions.push(SidebarAction::PasteFavoritesFromClipboard);
+            }
+            if ui.small_button("Очистить").on_hover_text("Очистить список избранного").clicked() {
+                state.favorites.clear();
+            }
+        });
+
+        // Field to insert / paste symbols
+        ui.horizontal(|ui| {
+            let edit_resp = ui.add(
+                egui::TextEdit::singleline(&mut state.add_favorite_input)
+                    .hint_text("Вставить/ввести символы...")
+                    .desired_width(ui.available_width() - 85.0),
+            );
+            let enter_pressed = edit_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if ui.button("Добавить").clicked() || enter_pressed {
+                for ch in state.add_favorite_input.chars() {
+                    if !ch.is_control() && !state.favorites.contains(&ch) {
+                        state.favorites.push(ch);
+                    }
+                }
+                state.add_favorite_input.clear();
+            }
+        });
+
+        if state.favorites.is_empty() {
+            ui.label(egui::RichText::new("(пусто — введите символы или нажмите «+ Кисть»)").color(theme.text_muted).size(11.0));
+        } else {
+            let fav_cols = 11;
+            let fav_cell_size = Vec2::new(29.0, 29.0);
+            let mut to_remove = None;
+
+            egui::Grid::new("favorites_grid")
+                .spacing(Vec2::new(3.0, 3.0))
+                .show(ui, |ui| {
+                    for (idx, &ch) in state.favorites.iter().enumerate() {
+                        let is_active = tools.brush_char == ch;
+                        let (rect, resp) = ui.allocate_exact_size(fav_cell_size, Sense::click());
+                        let bg = if is_active {
+                            theme.button_active
+                        } else if resp.hovered() {
+                            theme.button_hover
+                        } else {
+                            theme.button_bg
+                        };
+
+                        ui.painter().rect_filled(rect, 4.0, bg);
+                        ui.painter().rect_stroke(rect, 4.0, Stroke::new(0.5, theme.panel_border), egui::StrokeKind::Outside);
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            ch.to_string(),
+                            egui::FontId::monospace(14.0),
+                            theme.text_primary,
+                        );
+
+                        let resp = resp.on_hover_text(format!("'{}' (ПКМ — удалить)", ch));
+                        if resp.clicked() {
+                            tools.brush_char = ch;
+                        }
+                        if resp.secondary_clicked() {
+                            to_remove = Some(idx);
+                        }
+
+                        if (idx + 1) % fav_cols == 0 {
+                            ui.end_row();
+                        }
+                    }
+                });
+
+            if let Some(idx) = to_remove {
+                state.favorites.remove(idx);
+            }
+        }
+
+        ui.separator();
 
         // --- Font Selector ---
         ui.horizontal(|ui| {
@@ -91,7 +183,7 @@ pub fn render_right_sidebar(
         // --- Symbol Palette Grid ---
         ui.label(egui::RichText::new("Symbol Palette").strong().color(theme.text_primary));
         
-        let cols_count = 9;
+        let cols_count = 11;
         let cell_btn_size = Vec2::new(29.0, 29.0);
 
         egui::Grid::new("palette_grid")
@@ -131,7 +223,7 @@ pub fn render_right_sidebar(
         let edit_pal_btn = egui::Button::new("Edit Symbol Palette")
             .fill(theme.button_bg)
             .corner_radius(8.0);
-        if ui.add_sized([240.0, 28.0], edit_pal_btn).clicked() {
+        if ui.add_sized([ui.available_width(), 28.0], edit_pal_btn).clicked() {
             actions.push(SidebarAction::OpenPaletteEditor);
         }
 
@@ -144,7 +236,7 @@ pub fn render_right_sidebar(
             let load_btn = egui::Button::new("📂 Load Image...")
                 .fill(theme.button_bg)
                 .corner_radius(8.0);
-            if ui.add_sized([240.0, 28.0], load_btn).clicked() {
+            if ui.add_sized([ui.available_width(), 28.0], load_btn).clicked() {
                 actions.push(SidebarAction::LoadImage);
             }
         } else {
@@ -224,7 +316,7 @@ pub fn render_right_sidebar(
         let resize_btn = egui::Button::new("Resize Canvas")
             .fill(theme.button_bg)
             .corner_radius(8.0);
-        if ui.add_sized([240.0, 28.0], resize_btn).clicked() {
+        if ui.add_sized([ui.available_width(), 28.0], resize_btn).clicked() {
             if let (Ok(w), Ok(h)) = (state.resize_w_str.parse::<usize>(), state.resize_h_str.parse::<usize>()) {
                 actions.push(SidebarAction::ResizeCanvas(w, h, state.resize_anchor));
             }
@@ -250,7 +342,7 @@ pub fn render_right_sidebar(
         let replace_btn = egui::Button::new("Replace")
             .fill(theme.button_bg)
             .corner_radius(8.0);
-        if ui.add_sized([240.0, 28.0], replace_btn).clicked() {
+        if ui.add_sized([ui.available_width(), 28.0], replace_btn).clicked() {
             if let (Some(from_ch), Some(to_ch)) = (state.replace_from_str.chars().next(), state.replace_to_str.chars().next()) {
                 actions.push(SidebarAction::ReplaceChar(from_ch, to_ch));
             }
@@ -272,7 +364,7 @@ pub fn render_right_sidebar(
         let save_png_btn = egui::Button::new("Save Image PNG")
             .fill(theme.button_bg)
             .corner_radius(8.0);
-        if ui.add_sized([240.0, 28.0], save_png_btn).clicked() {
+        if ui.add_sized([ui.available_width(), 28.0], save_png_btn).clicked() {
             let w = state.png_w_str.parse::<usize>().unwrap_or(800);
             let h = state.png_h_str.parse::<usize>().unwrap_or(600);
             actions.push(SidebarAction::SavePng(w, h));

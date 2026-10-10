@@ -253,7 +253,7 @@ impl eframe::App for AsciiPaintApp {
                     .inner_margin(Margin::same(12)),
             )
             .resizable(false)
-            .exact_size(320.0)
+            .exact_size(390.0)
             .show(ui, |ui| {
                 sidebar_actions = render_right_sidebar(
                     ui,
@@ -509,6 +509,18 @@ impl eframe::App for AsciiPaintApp {
                         if png.save(&path).is_ok() {
                             self.set_toast("Saved PNG image");
                         }
+                    }
+                }
+                SidebarAction::PasteFavoritesFromClipboard => {
+                    if let Some(text) = self.get_clipboard_text(&ctx) {
+                        let mut added = 0;
+                        for ch in text.chars() {
+                            if !ch.is_control() && !self.sidebar.favorites.contains(&ch) {
+                                self.sidebar.favorites.push(ch);
+                                added += 1;
+                            }
+                        }
+                        self.set_toast(format!("Added {} symbols to favorites", added));
                     }
                 }
             }
