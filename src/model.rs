@@ -82,6 +82,7 @@ impl CanvasGrid {
         true
     }
 
+    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.cells.fill(' ');
     }
@@ -480,6 +481,8 @@ mod tests {
         assert!(grid.set(2, 3, '#'));
         assert_eq!(grid.get(2, 3), Some('#'));
         assert_eq!(grid.get(10, 5), None);
+        grid.clear();
+        assert_eq!(grid.get(2, 3), Some(' '));
     }
 
     #[test]

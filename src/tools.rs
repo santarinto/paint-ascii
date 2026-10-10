@@ -40,7 +40,6 @@ pub struct ToolState {
     pub current_tool: Tool,
     pub brush_char: char,
     pub palette: Vec<char>,
-    pub custom_palette_text: String,
 }
 
 impl Default for ToolState {
@@ -49,7 +48,6 @@ impl Default for ToolState {
             current_tool: Tool::Pencil,
             brush_char: '*',
             palette: DEFAULT_PALETTE.chars().collect(),
-            custom_palette_text: DEFAULT_PALETTE.to_string(),
         }
     }
 }

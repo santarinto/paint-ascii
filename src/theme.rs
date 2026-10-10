@@ -23,7 +23,6 @@ pub struct ThemeColors {
     pub button_active: Color32,
     pub accent: Color32,
     pub shadow: Color32,
-    pub modal_dim: Color32,
 }
 
 impl AppTheme {
@@ -45,7 +44,6 @@ impl AppTheme {
                 button_active: Color32::from_rgb(175, 165, 210),
                 accent: Color32::from_rgb(110, 95, 165),
                 shadow: Color32::from_rgba_premultiplied(110, 95, 165, 60),
-                modal_dim: Color32::from_rgba_premultiplied(110, 95, 165, 128),
             },
             AppTheme::Dark => ThemeColors {
                 bg_workspace: Color32::from_rgb(24, 21, 38),
@@ -63,7 +61,6 @@ impl AppTheme {
                 button_active: Color32::from_rgb(90, 75, 130),
                 accent: Color32::from_rgb(160, 140, 230),
                 shadow: Color32::from_rgba_premultiplied(0, 0, 0, 100),
-                modal_dim: Color32::from_rgba_premultiplied(0, 0, 0, 150),
             },
         }
     }
