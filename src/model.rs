@@ -534,4 +534,70 @@ mod tests {
         let redone = history.redo(undone).unwrap();
         assert_eq!(redone, g2);
     }
+
+    #[test]
+    fn test_resize_anchors() {
+        let mut grid = CanvasGrid::new(2, 2);
+        grid.set(0, 0, '1');
+        grid.set(1, 0, '2');
+        grid.set(0, 1, '3');
+        grid.set(1, 1, '4');
+
+        // TopLeft expansion
+        let mut g_tl = grid.clone();
+        g_tl.resize(4, 4, Anchor::TopLeft);
+        assert_eq!(g_tl.get(0, 0), Some('1'));
+        assert_eq!(g_tl.get(1, 1), Some('4'));
+        assert_eq!(g_tl.get(2, 2), Some(' '));
+
+        // BottomRight expansion
+        let mut g_br = grid.clone();
+        g_br.resize(4, 4, Anchor::BottomRight);
+        assert_eq!(g_br.get(2, 2), Some('1'));
+        assert_eq!(g_br.get(3, 3), Some('4'));
+        assert_eq!(g_br.get(0, 0), Some(' '));
+    }
+
+    #[test]
+    fn test_replace_char_and_bounds() {
+        let mut grid = CanvasGrid::new(3, 3);
+        grid.set(0, 0, 'A');
+        grid.set(1, 1, 'A');
+        grid.set(2, 2, 'A');
+
+        // Replace only in bounds (0,0) to (1,1)
+        grid.replace_char('A', 'B', Some(RectBounds::new(0, 0, 1, 1)));
+        assert_eq!(grid.get(0, 0), Some('B'));
+        assert_eq!(grid.get(1, 1), Some('B'));
+        assert_eq!(grid.get(2, 2), Some('A'));
+    }
+
+    #[test]
+    fn test_copy_paste_region() {
+        let mut grid = CanvasGrid::new(4, 4);
+        grid.set(0, 0, 'X');
+        grid.set(1, 0, 'Y');
+        grid.set(0, 1, 'Z');
+        grid.set(1, 1, 'W');
+
+        let text = grid.copy_region(RectBounds::new(0, 0, 1, 1));
+        assert_eq!(text, "XY\nZW");
+
+        let mut dest_grid = CanvasGrid::new(4, 4);
+        dest_grid.paste_region(2, 2, &text, false, None);
+        assert_eq!(dest_grid.get(2, 2), Some('X'));
+        assert_eq!(dest_grid.get(3, 2), Some('Y'));
+        assert_eq!(dest_grid.get(2, 3), Some('Z'));
+        assert_eq!(dest_grid.get(3, 3), Some('W'));
+    }
+
+    #[test]
+    fn test_string_roundtrip() {
+        let ascii_art = "┌──┐\n│  │\n└──┘";
+        let grid = CanvasGrid::from_ascii_str(ascii_art);
+        assert_eq!(grid.width, 4);
+        assert_eq!(grid.height, 3);
+        let out_str = grid.to_ascii_string();
+        assert_eq!(out_str, ascii_art);
+    }
 }
