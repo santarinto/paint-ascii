@@ -75,13 +75,12 @@ pub fn render_right_sidebar(
 ) -> Vec<SidebarAction> {
     let mut actions = Vec::new();
 
-    let avail_w = ui.available_width().clamp(380.0, 650.0);
-    let dynamic_cols = ((avail_w - 10.0) / 32.0).floor().clamp(11.0, 19.0) as usize;
+    let cell_size = Vec2::new(29.0, 29.0);
+    let gap = 3.0;
 
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            ui.set_max_width(avail_w);
             ui.spacing_mut().item_spacing = Vec2::new(0.0, 8.0);
 
             // --- Favorites (Избранное / Сборное) ---
@@ -102,11 +101,12 @@ pub fn render_right_sidebar(
 
             // Field to insert / paste symbols
             ui.horizontal(|ui| {
-                let input_width = (ui.available_width() - 85.0).clamp(180.0, avail_w - 85.0);
+                let btn_w = 75.0;
+                let input_w = (ui.available_width() - btn_w - ui.spacing().item_spacing.x).max(80.0);
                 let edit_resp = ui.add(
                     egui::TextEdit::singleline(&mut state.add_favorite_input)
                         .hint_text("Вставить/ввести символы...")
-                        .desired_width(input_width),
+                        .desired_width(input_w),
                 );
                 let enter_pressed = edit_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                 if ui.button("Добавить").clicked() || enter_pressed {
@@ -122,16 +122,78 @@ pub fn render_right_sidebar(
             if state.favorites.is_empty() {
                 ui.label(egui::RichText::new("(пусто — введите символы или нажмите «+ Кисть»)").color(theme.text_muted).size(11.0));
             } else {
-                let fav_cols = dynamic_cols;
-                let fav_cell_size = Vec2::new(29.0, 29.0);
+                let cols = ((ui.available_width() + gap) / (cell_size.x + gap)).floor().max(1.0) as usize;
                 let mut to_remove = None;
 
-            egui::Grid::new("favorites_grid")
-                .spacing(Vec2::new(3.0, 3.0))
-                .show(ui, |ui| {
-                    for (idx, &ch) in state.favorites.iter().enumerate() {
+                for (chunk_idx, chunk) in state.favorites.chunks(cols).enumerate() {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing = Vec2::new(gap, gap);
+                        for (i, &ch) in chunk.iter().enumerate() {
+                            let idx = chunk_idx * cols + i;
+                            let is_active = tools.brush_char == ch;
+                            let (rect, resp) = ui.allocate_exact_size(cell_size, Sense::click());
+                            let bg = if is_active {
+                                theme.button_active
+                            } else if resp.hovered() {
+                                theme.button_hover
+                            } else {
+                                theme.button_bg
+                            };
+
+                            ui.painter().rect_filled(rect, 4.0, bg);
+                            ui.painter().rect_stroke(rect, 4.0, Stroke::new(0.5, theme.panel_border), egui::StrokeKind::Outside);
+                            ui.painter().text(
+                                rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                ch.to_string(),
+                                egui::FontId::monospace(14.0),
+                                theme.text_primary,
+                            );
+
+                            let resp = resp.on_hover_text(format!("'{}' (ПКМ — удалить)", ch));
+                            if resp.clicked() {
+                                tools.brush_char = ch;
+                            }
+                            if resp.secondary_clicked() {
+                                to_remove = Some(idx);
+                            }
+                        }
+                    });
+                }
+
+                if let Some(idx) = to_remove {
+                    state.favorites.remove(idx);
+                }
+            }
+
+            ui.separator();
+
+            // --- Font Selector ---
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("Font:").color(theme.text_primary));
+                let fonts = ["Monospace", "Courier New", "Lucida Console", "Consolas"];
+                egui::ComboBox::from_id_salt("font_selector")
+                    .selected_text(fonts[state.selected_font_idx])
+                    .show_ui(ui, |ui| {
+                        for (i, &f) in fonts.iter().enumerate() {
+                            ui.selectable_value(&mut state.selected_font_idx, i, f);
+                        }
+                    });
+            });
+
+            ui.separator();
+
+            // --- Symbol Palette Grid ---
+            ui.label(egui::RichText::new("Symbol Palette").strong().color(theme.text_primary));
+
+            let cols = ((ui.available_width() + gap) / (cell_size.x + gap)).floor().max(1.0) as usize;
+
+            for chunk in tools.palette.chunks(cols) {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing = Vec2::new(gap, gap);
+                    for &ch in chunk {
                         let is_active = tools.brush_char == ch;
-                        let (rect, resp) = ui.allocate_exact_size(fav_cell_size, Sense::click());
+                        let (rect, resp) = ui.allocate_exact_size(cell_size, Sense::click());
                         let bg = if is_active {
                             theme.button_active
                         } else if resp.hovered() {
@@ -150,90 +212,21 @@ pub fn render_right_sidebar(
                             theme.text_primary,
                         );
 
-                        let resp = resp.on_hover_text(format!("'{}' (ПКМ — удалить)", ch));
                         if resp.clicked() {
                             tools.brush_char = ch;
                         }
-                        if resp.secondary_clicked() {
-                            to_remove = Some(idx);
-                        }
-
-                        if (idx + 1) % fav_cols == 0 {
-                            ui.end_row();
-                        }
                     }
                 });
-
-            if let Some(idx) = to_remove {
-                state.favorites.remove(idx);
             }
-        }
 
-        ui.separator();
+            let edit_pal_btn = egui::Button::new("Edit Symbol Palette")
+                .fill(theme.button_bg)
+                .corner_radius(8.0);
+            if ui.add_sized([ui.available_width(), 28.0], edit_pal_btn).clicked() {
+                actions.push(SidebarAction::OpenPaletteEditor);
+            }
 
-        // --- Font Selector ---
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Font:").color(theme.text_primary));
-            let fonts = ["Monospace", "Courier New", "Lucida Console", "Consolas"];
-            egui::ComboBox::from_id_salt("font_selector")
-                .selected_text(fonts[state.selected_font_idx])
-                .show_ui(ui, |ui| {
-                    for (i, &f) in fonts.iter().enumerate() {
-                        ui.selectable_value(&mut state.selected_font_idx, i, f);
-                    }
-                });
-        });
-
-        ui.separator();
-
-        // --- Symbol Palette Grid ---
-        ui.label(egui::RichText::new("Symbol Palette").strong().color(theme.text_primary));
-        
-        let cols_count = dynamic_cols;
-        let cell_btn_size = Vec2::new(29.0, 29.0);
-
-        egui::Grid::new("palette_grid")
-            .spacing(Vec2::new(3.0, 3.0))
-            .show(ui, |ui| {
-                for (idx, &ch) in tools.palette.iter().enumerate() {
-                    let is_active = tools.brush_char == ch;
-                    let (rect, resp) = ui.allocate_exact_size(cell_btn_size, Sense::click());
-                    let bg = if is_active {
-                        theme.button_active
-                    } else if resp.hovered() {
-                        theme.button_hover
-                    } else {
-                        theme.button_bg
-                    };
-
-                    ui.painter().rect_filled(rect, 4.0, bg);
-                    ui.painter().rect_stroke(rect, 4.0, Stroke::new(0.5, theme.panel_border), egui::StrokeKind::Outside);
-                    ui.painter().text(
-                        rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        ch.to_string(),
-                        egui::FontId::monospace(14.0),
-                        theme.text_primary,
-                    );
-
-                    if resp.clicked() {
-                        tools.brush_char = ch;
-                    }
-
-                    if (idx + 1) % cols_count == 0 {
-                        ui.end_row();
-                    }
-                }
-            });
-
-        let edit_pal_btn = egui::Button::new("Edit Symbol Palette")
-            .fill(theme.button_bg)
-            .corner_radius(8.0);
-        if ui.add_sized([ui.available_width(), 28.0], edit_pal_btn).clicked() {
-            actions.push(SidebarAction::OpenPaletteEditor);
-        }
-
-        ui.separator();
+            ui.separator();
 
         // --- Image to ASCII Section ---
         ui.label(egui::RichText::new("Image to ASCII / Braille").strong().color(theme.text_primary));

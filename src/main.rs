@@ -306,7 +306,7 @@ impl eframe::App for AsciiPaintApp {
 
         // --- Right Sidebar Panel ---
         let mut sidebar_actions = Vec::new();
-        egui::Panel::right("right_sidebar_panel_v2")
+        egui::Panel::right("right_sidebar_panel_v3")
             .frame(
                 egui::Frame::new()
                     .fill(theme_colors.panel_bg)
