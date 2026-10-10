@@ -2282,6 +2282,7 @@ dependencies = [
 name = "paint-ascii"
 version = "0.1.0"
 dependencies = [
+ "arboard",
  "eframe",
  "image",
  "rfd",

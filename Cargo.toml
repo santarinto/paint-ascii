@@ -7,3 +7,4 @@ edition = "2024"
 eframe = "0.36.2"
 rfd = "0.15"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+arboard = "3.6"
