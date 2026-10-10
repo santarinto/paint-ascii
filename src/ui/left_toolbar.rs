@@ -18,6 +18,7 @@ pub fn render_left_toolbar(
 
                 let tool_list = [
                     Tool::Scroll,
+                    Tool::Zoom,
                     Tool::Pencil,
                     Tool::Eraser,
                     Tool::Fill,

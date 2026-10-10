@@ -1,6 +1,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tool {
     Scroll,  // Alt+H (Hand / pan)
+    Zoom,    // Alt+Z (Magnifier / Лупа)
     Pencil,  // Alt+B
     Eraser,  // Alt+E
     Fill,    // Alt+G
@@ -12,6 +13,7 @@ impl Tool {
     pub fn name(&self) -> &'static str {
         match self {
             Tool::Scroll => "Hand / Pan (Alt+H)",
+            Tool::Zoom => "Zoom / Лупа (Alt+Z)",
             Tool::Pencil => "Pencil (Alt+B)",
             Tool::Eraser => "Eraser (Alt+E)",
             Tool::Fill => "Fill (Alt+G)",
@@ -23,6 +25,7 @@ impl Tool {
     pub fn icon(&self) -> &'static str {
         match self {
             Tool::Scroll => "✋",
+            Tool::Zoom => "🔍",
             Tool::Pencil => "✏",
             Tool::Eraser => "⌫",
             Tool::Fill => "🪣",

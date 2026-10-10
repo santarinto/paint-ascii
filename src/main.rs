@@ -124,6 +124,8 @@ impl AsciiPaintApp {
         if alt {
             if input.key_pressed(egui::Key::H) {
                 self.tools.current_tool = Tool::Scroll;
+            } else if input.key_pressed(egui::Key::Z) {
+                self.tools.current_tool = Tool::Zoom;
             } else if input.key_pressed(egui::Key::B) {
                 self.tools.current_tool = Tool::Pencil;
             } else if input.key_pressed(egui::Key::E) {

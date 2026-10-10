@@ -167,7 +167,26 @@ pub fn render_canvas(
 
     // Handle tool interactions
     if let Some((col, row)) = state.hovered_cell {
-        if (middle_clicked || middle_down) && !state.is_panning {
+        if tools.current_tool == Tool::Zoom {
+            ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::ZoomIn);
+            if pointer.primary_clicked() {
+                let old_zoom = state.zoom;
+                state.zoom = (state.zoom * 1.5).min(5.0);
+                if let Some(pos) = pointer.hover_pos() {
+                    let rel = pos - canvas_rect.min;
+                    let ratio = state.zoom / old_zoom;
+                    state.pan_offset += rel * (1.0 - ratio);
+                }
+            } else if pointer.secondary_clicked() && !ui.input(|i| i.modifiers.shift) {
+                let old_zoom = state.zoom;
+                state.zoom = (state.zoom / 1.5).max(0.25);
+                if let Some(pos) = pointer.hover_pos() {
+                    let rel = pos - canvas_rect.min;
+                    let ratio = state.zoom / old_zoom;
+                    state.pan_offset += rel * (1.0 - ratio);
+                }
+            }
+        } else if (middle_clicked || middle_down) && !state.is_panning {
             // Middle-click always acts as Pipette
             if let Some(ch) = grid.get(col, row) {
                 actions.push(CanvasAction::PipetteSampled(ch));
@@ -203,7 +222,7 @@ pub fn render_canvas(
                     Tool::Eraser => {
                         actions.push(CanvasAction::CellPainted(col, row, ' '));
                     }
-                    Tool::Scroll => {}
+                    Tool::Scroll | Tool::Zoom => {}
                 }
             } else {
                 // Continued drag
