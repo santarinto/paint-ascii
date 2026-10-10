@@ -64,6 +64,7 @@ pub enum SidebarAction {
     ConvertImgToBraille,
     SavePng(usize, usize),
     PasteFavoritesFromClipboard,
+    PopulateFavoritesFromCanvas,
 }
 
 pub fn render_right_sidebar(
@@ -90,6 +91,9 @@ pub fn render_right_sidebar(
                     if !state.favorites.contains(&tools.brush_char) {
                         state.favorites.push(tools.brush_char);
                     }
+                }
+                if ui.small_button("🎨 С холста").on_hover_text("Собрать все уникальные символы с холста в избранное").clicked() {
+                    actions.push(SidebarAction::PopulateFavoritesFromCanvas);
                 }
                 if ui.small_button("📋 Вставить").on_hover_text("Вставить символы из буфера обмена в избранное").clicked() {
                     actions.push(SidebarAction::PasteFavoritesFromClipboard);

@@ -176,13 +176,26 @@ pub fn render_canvas(
             let mouse_pos = pointer.hover_pos();
             state.hovered_cell = mouse_pos.and_then(|pos| state.screen_to_cell(pos, canvas_rect, grid.width, grid.height));
 
+            let shift_down = ui.input(|i| i.modifiers.shift);
+
             // Handle tool interactions
             if let Some((col, row)) = state.hovered_cell {
-                if tools.current_tool == Tool::Zoom {
+                if (shift_down || state.selection_drag_start.is_some()) && !state.is_panning && tools.current_tool != Tool::Scroll {
+                    ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Crosshair);
+                    if primary_down {
+                        if !state.is_dragging_stroke {
+                            state.is_dragging_stroke = true;
+                            state.selection_drag_start = Some((col, row));
+                            state.selection = Some(RectBounds::new(col, row, col, row));
+                        } else if let Some((start_c, start_r)) = state.selection_drag_start {
+                            state.selection = Some(RectBounds::new(start_c, start_r, col, row));
+                        }
+                    }
+                } else if tools.current_tool == Tool::Zoom {
                     ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::ZoomIn);
                     if pointer.primary_clicked() {
                         state.zoom = (state.zoom * 1.5).min(5.0);
-                    } else if pointer.secondary_clicked() && !ui.input(|i| i.modifiers.shift) {
+                    } else if pointer.secondary_clicked() && !shift_down {
                         state.zoom = (state.zoom / 1.5).max(0.25);
                     }
                 } else if tools.current_tool == Tool::DeleteRow {
@@ -260,12 +273,17 @@ pub fn render_canvas(
                 state.selection_drag_start = None;
             }
 
-            // Context menu trigger (Shift + Right-click)
-            if secondary_clicked && ui.input(|i| i.modifiers.shift) {
-                if let Some(pos) = mouse_pos {
-                    state.show_context_menu = true;
-                    state.context_menu_pos = pos;
-                    state.context_menu_cell = state.hovered_cell;
+            // Context menu trigger (Right-click on selection OR Shift + Right-click)
+            if secondary_clicked {
+                let on_selection = state.hovered_cell.map_or(false, |(c, r)| {
+                    state.selection.map_or(false, |sel| sel.contains(c, r))
+                });
+                if shift_down || on_selection {
+                    if let Some(pos) = mouse_pos {
+                        state.show_context_menu = true;
+                        state.context_menu_pos = pos;
+                        state.context_menu_cell = state.hovered_cell;
+                    }
                 }
             }
 

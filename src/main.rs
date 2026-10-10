@@ -1,3 +1,4 @@
+mod ansi;
 mod canvas;
 mod color;
 mod image_converter;
@@ -130,6 +131,15 @@ impl AsciiPaintApp {
         None
     }
 
+    fn cut_to_clipboard(&mut self, ctx: &egui::Context) {
+        if let Some(sel) = self.viewport.selection {
+            self.copy_to_clipboard(ctx);
+            self.history.push_state(self.grid.clone());
+            self.grid.clear_region(sel);
+            self.set_toast("Cut selected region to clipboard");
+        }
+    }
+
     fn paste_from_clipboard(&mut self, ctx: &egui::Context) {
         if let Some(text) = self.get_clipboard_text(ctx) {
             if text.is_empty() {
@@ -142,10 +152,9 @@ impl AsciiPaintApp {
                 .or(self.viewport.hovered_cell)
                 .unwrap_or((0, 0));
 
-            self.grid.paste_region_expanding(dest_x, dest_y, &text, false);
-            self.sidebar.resize_w_str = self.grid.width.to_string();
-            self.sidebar.resize_h_str = self.grid.height.to_string();
-            self.set_toast(format!("Pasted & expanded canvas ({}×{})", self.grid.width, self.grid.height));
+            self.grid.paste_region(dest_x, dest_y, &text, false, None);
+            self.add_chars_to_favorites(&text);
+            self.set_toast(format!("Pasted at ({}, {}) [clipped to canvas]", dest_x, dest_y));
         } else {
             self.set_toast("Clipboard is empty");
         }
@@ -161,9 +170,18 @@ impl AsciiPaintApp {
             self.grid.paste_region_expanding(0, 0, &text, false);
             self.sidebar.resize_w_str = self.grid.width.to_string();
             self.sidebar.resize_h_str = self.grid.height.to_string();
+            self.add_chars_to_favorites(&text);
             self.set_toast(format!("Imported from clipboard ({}×{})", self.grid.width, self.grid.height));
         } else {
             self.set_toast("Clipboard is empty");
+        }
+    }
+
+    fn add_chars_to_favorites(&mut self, text: &str) {
+        for ch in text.chars() {
+            if !ch.is_control() && ch != ' ' && !self.sidebar.favorites.contains(&ch) {
+                self.sidebar.favorites.push(ch);
+            }
         }
     }
 
@@ -182,6 +200,15 @@ impl AsciiPaintApp {
         let alt = input.modifiers.alt;
         let ctrl = input.modifiers.command || input.modifiers.ctrl;
         let shift = input.modifiers.shift;
+
+        // Delete / Backspace always clears active selection
+        if input.key_pressed(egui::Key::Delete) || input.key_pressed(egui::Key::Backspace) {
+            if let Some(sel) = self.viewport.selection {
+                self.history.push_state(self.grid.clone());
+                self.grid.clear_region(sel);
+                self.set_toast("Cleared selection");
+            }
+        }
 
         // Tools shortcuts
         if alt {
@@ -205,6 +232,8 @@ impl AsciiPaintApp {
                 self.tools.current_tool = Tool::DeleteCol;
             } else if input.key_pressed(egui::Key::C) {
                 self.copy_to_clipboard(ctx);
+            } else if input.key_pressed(egui::Key::X) {
+                self.cut_to_clipboard(ctx);
             } else if input.key_pressed(egui::Key::V) {
                 self.paste_from_clipboard(ctx);
             } else if input.key_pressed(egui::Key::S) {
@@ -229,6 +258,8 @@ impl AsciiPaintApp {
                 self.redo();
             } else if input.key_pressed(egui::Key::C) {
                 self.copy_to_clipboard(ctx);
+            } else if input.key_pressed(egui::Key::X) {
+                self.cut_to_clipboard(ctx);
             } else if input.key_pressed(egui::Key::V) {
                 if shift {
                     self.import_from_clipboard(ctx);
@@ -243,11 +274,6 @@ impl AsciiPaintApp {
         } else {
             if input.key_pressed(egui::Key::Escape) {
                 self.viewport.selection = None;
-            } else if input.key_pressed(egui::Key::Delete) || input.key_pressed(egui::Key::Backspace) {
-                if let Some(sel) = self.viewport.selection {
-                    self.history.push_state(self.grid.clone());
-                    self.grid.clear_region(sel);
-                }
             }
 
             // Any printable key changes active brush character!
@@ -279,7 +305,7 @@ impl AsciiPaintApp {
 
     fn load_txt_file(&mut self) {
         if let Some(path) = rfd::FileDialog::new()
-            .add_filter("Text file", &["txt", "asc", "ascii"])
+            .add_filter("Text & ANSI files", &["txt", "asc", "ans", "ascii", "text"])
             .pick_file()
         {
             if let Ok(content) = std::fs::read_to_string(&path) {
@@ -287,6 +313,7 @@ impl AsciiPaintApp {
                 self.grid = CanvasGrid::from_ascii_str(&content);
                 self.sidebar.resize_w_str = self.grid.width.to_string();
                 self.sidebar.resize_h_str = self.grid.height.to_string();
+                self.add_chars_to_favorites(&content);
                 self.set_toast(format!("Loaded: {}", path.file_name().unwrap_or_default().to_string_lossy()));
             }
         }
@@ -618,7 +645,7 @@ impl eframe::App for AsciiPaintApp {
                     if let Some(text) = self.get_clipboard_text(&ctx) {
                         let mut added = 0;
                         for ch in text.chars() {
-                            if !ch.is_control() && !self.sidebar.favorites.contains(&ch) {
+                            if !ch.is_control() && ch != ' ' && !self.sidebar.favorites.contains(&ch) {
                                 self.sidebar.favorites.push(ch);
                                 added += 1;
                             }
@@ -630,6 +657,20 @@ impl eframe::App for AsciiPaintApp {
                         }
                     } else {
                         self.set_toast("Clipboard is empty");
+                    }
+                }
+                SidebarAction::PopulateFavoritesFromCanvas => {
+                    let mut added = 0;
+                    for &ch in &self.grid.cells {
+                        if !ch.is_control() && ch != ' ' && !self.sidebar.favorites.contains(&ch) {
+                            self.sidebar.favorites.push(ch);
+                            added += 1;
+                        }
+                    }
+                    if added > 0 {
+                        self.set_toast(format!("Added {} symbols from canvas to favorites", added));
+                    } else {
+                        self.set_toast("All canvas symbols are already in favorites");
                     }
                 }
             }
@@ -644,6 +685,7 @@ impl eframe::App for AsciiPaintApp {
                     self.grid = CanvasGrid::from_ascii_str(&text);
                     self.sidebar.resize_w_str = self.grid.width.to_string();
                     self.sidebar.resize_h_str = self.grid.height.to_string();
+                    self.add_chars_to_favorites(&text);
                     self.set_toast("Applied text to canvas");
                 }
                 ModalAction::ApplyPalette(chars) => {
