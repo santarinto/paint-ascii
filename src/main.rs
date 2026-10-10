@@ -329,7 +329,7 @@ impl eframe::App for AsciiPaintApp {
                     .stroke(egui::Stroke::new(1.0, theme_colors.panel_border))
                     .inner_margin(Margin::symmetric(8, 4)),
             )
-            .exact_size(40.0)
+            .exact_size(46.0)
             .show(ui, |ui| {
                 menu_action = render_top_menu(
                     ui,
@@ -337,6 +337,7 @@ impl eframe::App for AsciiPaintApp {
                     &theme_colors,
                     self.history.can_undo(),
                     self.history.can_redo(),
+                    self.viewport.hovered_cell,
                 );
             });
 

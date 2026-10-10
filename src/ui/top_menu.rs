@@ -23,6 +23,7 @@ pub fn render_top_menu(
     theme: &ThemeColors,
     can_undo: bool,
     can_redo: bool,
+    hovered_cell: Option<(usize, usize)>,
 ) -> Option<MenuAction> {
     let mut triggered_action = None;
 
@@ -142,25 +143,35 @@ pub fn render_top_menu(
 
         ui.separator();
 
-        // --- 16-Color Fixed ANSI Palette ---
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing = Vec2::new(2.0, 2.0);
+        // --- 16-Color Fixed ANSI Palette in a Single Horizontal Row ---
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(3.0, 0.0);
+            for &color in &ColorId::PALETTE_STANDARD {
+                render_color_swatch(ui, tools, color, theme);
+            }
+            ui.add_space(4.0);
+            for &color in &ColorId::PALETTE_BRIGHT {
+                render_color_swatch(ui, tools, color, theme);
+            }
+        });
 
-            // Row 1: Standard 8
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing = Vec2::new(2.0, 0.0);
-                for &color in &ColorId::PALETTE_STANDARD {
-                    render_color_swatch(ui, tools, color, theme);
-                }
-            });
-
-            // Row 2: Bright 8
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing = Vec2::new(2.0, 0.0);
-                for &color in &ColorId::PALETTE_BRIGHT {
-                    render_color_swatch(ui, tools, color, theme);
-                }
-            });
+        // --- Hovered Cell Coordinates on the Right ---
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if let Some((col, row)) = hovered_cell {
+                ui.label(
+                    egui::RichText::new(format!("📍 X: {:>2}  Y: {:>2}", col, row))
+                        .monospace()
+                        .size(13.0)
+                        .color(theme.text_primary),
+                );
+            } else {
+                ui.label(
+                    egui::RichText::new("📍 X: --  Y: --")
+                        .monospace()
+                        .size(13.0)
+                        .color(theme.text_muted),
+                );
+            }
         });
     });
 
@@ -173,20 +184,20 @@ fn render_color_swatch(
     color: ColorId,
     theme: &ThemeColors,
 ) {
-    let size = Vec2::new(15.0, 14.0);
+    let size = Vec2::new(16.0, 22.0);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
     let is_selected = tools.brush_color == color;
 
-    ui.painter().rect_filled(rect, 2.0, color.preview_color32());
+    ui.painter().rect_filled(rect, 3.0, color.preview_color32());
 
     let stroke = if is_selected {
-        Stroke::new(1.5, Color32::WHITE)
+        Stroke::new(2.0, Color32::WHITE)
     } else if resp.hovered() {
-        Stroke::new(1.0, theme.accent)
+        Stroke::new(1.2, theme.accent)
     } else {
         Stroke::new(0.5, theme.panel_border)
     };
-    ui.painter().rect_stroke(rect, 2.0, stroke, egui::StrokeKind::Outside);
+    ui.painter().rect_stroke(rect, 3.0, stroke, egui::StrokeKind::Outside);
 
     let resp = resp.on_hover_text(color.name());
     if resp.clicked() {
