@@ -30,10 +30,10 @@ impl Default for RightSidebarState {
     fn default() -> Self {
         Self {
             selected_font_idx: 0,
-            resize_w_str: "60".to_string(),
+            resize_w_str: "20".to_string(),
             resize_h_str: "30".to_string(),
             resize_proportional: true,
-            resize_aspect_ratio: 2.0,
+            resize_aspect_ratio: 20.0 / 30.0,
             resize_anchor: Anchor::TopLeft,
             replace_from_str: "".to_string(),
             replace_to_str: "".to_string(),
@@ -70,7 +70,7 @@ pub fn render_right_sidebar(
     let mut actions = Vec::new();
 
     egui::ScrollArea::vertical().show(ui, |ui| {
-        ui.set_width(240.0);
+        ui.set_width(295.0);
         ui.spacing_mut().item_spacing = Vec2::new(0.0, 8.0);
 
         // --- Font Selector ---
@@ -91,8 +91,8 @@ pub fn render_right_sidebar(
         // --- Symbol Palette Grid ---
         ui.label(egui::RichText::new("Symbol Palette").strong().color(theme.text_primary));
         
-        let cols_count = 7;
-        let cell_btn_size = Vec2::new(30.0, 30.0);
+        let cols_count = 9;
+        let cell_btn_size = Vec2::new(29.0, 29.0);
 
         egui::Grid::new("palette_grid")
             .spacing(Vec2::new(3.0, 3.0))

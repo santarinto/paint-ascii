@@ -30,7 +30,7 @@ struct AsciiPaintApp {
 impl AsciiPaintApp {
     fn new() -> Self {
         Self {
-            grid: CanvasGrid::new(60, 30),
+            grid: CanvasGrid::new(20, 30),
             history: HistoryManager::new(50),
             tools: ToolState::default(),
             viewport: ViewportState::default(),
@@ -209,7 +209,7 @@ impl eframe::App for AsciiPaintApp {
                     .inner_margin(Margin::same(12)),
             )
             .resizable(false)
-            .exact_size(260.0)
+            .exact_size(320.0)
             .show(ui, |ui| {
                 sidebar_actions = render_right_sidebar(
                     ui,
@@ -280,8 +280,10 @@ impl eframe::App for AsciiPaintApp {
             match action {
                 MenuAction::New => {
                     self.history.push_state(self.grid.clone());
-                    self.grid = CanvasGrid::new(60, 30);
-                    self.set_toast("Created new 60×30 canvas");
+                    self.grid = CanvasGrid::new(20, 30);
+                    self.sidebar.resize_w_str = "20".to_string();
+                    self.sidebar.resize_h_str = "30".to_string();
+                    self.set_toast("Created new 20×30 canvas");
                 }
                 MenuAction::Load => {
                     self.load_txt_file();
