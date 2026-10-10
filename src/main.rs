@@ -305,8 +305,9 @@ impl eframe::App for AsciiPaintApp {
                     .stroke(egui::Stroke::new(1.0, theme_colors.panel_border))
                     .inner_margin(Margin::same(12)),
             )
-            .resizable(false)
-            .exact_size(390.0)
+            .resizable(true)
+            .min_size(430.0)
+            .default_size(430.0)
             .show(ui, |ui| {
                 sidebar_actions = render_right_sidebar(
                     ui,

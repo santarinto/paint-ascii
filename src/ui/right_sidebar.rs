@@ -76,7 +76,8 @@ pub fn render_right_sidebar(
     let mut actions = Vec::new();
 
     egui::ScrollArea::vertical().show(ui, |ui| {
-        ui.set_width(365.0);
+        let avail_w = ui.available_width();
+        let dynamic_cols = ((avail_w - 6.0) / 32.0).floor().max(11.0) as usize;
         ui.spacing_mut().item_spacing = Vec2::new(0.0, 8.0);
 
         // --- Favorites (Избранное / Сборное) ---
@@ -116,7 +117,7 @@ pub fn render_right_sidebar(
         if state.favorites.is_empty() {
             ui.label(egui::RichText::new("(пусто — введите символы или нажмите «+ Кисть»)").color(theme.text_muted).size(11.0));
         } else {
-            let fav_cols = 11;
+            let fav_cols = dynamic_cols;
             let fav_cell_size = Vec2::new(29.0, 29.0);
             let mut to_remove = None;
 
@@ -183,7 +184,7 @@ pub fn render_right_sidebar(
         // --- Symbol Palette Grid ---
         ui.label(egui::RichText::new("Symbol Palette").strong().color(theme.text_primary));
         
-        let cols_count = 11;
+        let cols_count = dynamic_cols;
         let cell_btn_size = Vec2::new(29.0, 29.0);
 
         egui::Grid::new("palette_grid")
