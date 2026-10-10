@@ -403,6 +403,32 @@ impl CanvasGrid {
         }
     }
 
+    pub fn ensure_dimensions(&mut self, required_w: usize, required_h: usize) {
+        let new_w = self.width.max(required_w);
+        let new_h = self.height.max(required_h);
+        if new_w > self.width || new_h > self.height {
+            self.resize(new_w, new_h, Anchor::TopLeft);
+        }
+    }
+
+    pub fn paste_region_expanding(
+        &mut self,
+        dest_x: usize,
+        dest_y: usize,
+        text: &str,
+        transparent_space: bool,
+    ) {
+        let lines: Vec<&str> = text.lines().collect();
+        if lines.is_empty() {
+            return;
+        }
+        let text_h = lines.len();
+        let text_w = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+
+        self.ensure_dimensions(dest_x + text_w, dest_y + text_h);
+        self.paste_region(dest_x, dest_y, text, transparent_space, None);
+    }
+
     pub fn clear_region(&mut self, bounds: RectBounds) {
         let min_x = bounds.min_x.min(self.width.saturating_sub(1));
         let max_x = bounds.max_x.min(self.width.saturating_sub(1));
@@ -599,5 +625,23 @@ mod tests {
         assert_eq!(grid.height, 3);
         let out_str = grid.to_ascii_string();
         assert_eq!(out_str, ascii_art);
+    }
+
+    #[test]
+    fn test_paste_region_expanding() {
+        let mut grid = CanvasGrid::new(2, 2);
+        grid.set(0, 0, 'O');
+
+        // Paste 4x3 text starting at (1, 1), requiring grid to expand to 5x4
+        let text = "AAAA\nBBBB\nCCCC";
+        grid.paste_region_expanding(1, 1, text, false);
+
+        assert_eq!(grid.width, 5);
+        assert_eq!(grid.height, 4);
+        assert_eq!(grid.get(0, 0), Some('O'));
+        assert_eq!(grid.get(1, 1), Some('A'));
+        assert_eq!(grid.get(4, 1), Some('A'));
+        assert_eq!(grid.get(1, 3), Some('C'));
+        assert_eq!(grid.get(4, 3), Some('C'));
     }
 }
