@@ -75,51 +75,56 @@ pub fn render_right_sidebar(
 ) -> Vec<SidebarAction> {
     let mut actions = Vec::new();
 
-    egui::ScrollArea::vertical().show(ui, |ui| {
-        let avail_w = ui.available_width();
-        let dynamic_cols = ((avail_w - 6.0) / 32.0).floor().max(11.0) as usize;
-        ui.spacing_mut().item_spacing = Vec2::new(0.0, 8.0);
+    let avail_w = ui.available_width().clamp(380.0, 650.0);
+    let dynamic_cols = ((avail_w - 10.0) / 32.0).floor().clamp(11.0, 19.0) as usize;
 
-        // --- Favorites (Избранное / Сборное) ---
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("⭐ Избранное").strong().color(theme.text_primary));
-            if ui.small_button("+ Кисть").on_hover_text("Добавить текущую кисть в избранное").clicked() {
-                if !state.favorites.contains(&tools.brush_char) {
-                    state.favorites.push(tools.brush_char);
-                }
-            }
-            if ui.small_button("📋 Вставить").on_hover_text("Вставить символы из буфера обмена в избранное").clicked() {
-                actions.push(SidebarAction::PasteFavoritesFromClipboard);
-            }
-            if ui.small_button("Очистить").on_hover_text("Очистить список избранного").clicked() {
-                state.favorites.clear();
-            }
-        });
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            ui.set_max_width(avail_w);
+            ui.spacing_mut().item_spacing = Vec2::new(0.0, 8.0);
 
-        // Field to insert / paste symbols
-        ui.horizontal(|ui| {
-            let edit_resp = ui.add(
-                egui::TextEdit::singleline(&mut state.add_favorite_input)
-                    .hint_text("Вставить/ввести символы...")
-                    .desired_width(ui.available_width() - 85.0),
-            );
-            let enter_pressed = edit_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            if ui.button("Добавить").clicked() || enter_pressed {
-                for ch in state.add_favorite_input.chars() {
-                    if !ch.is_control() && !state.favorites.contains(&ch) {
-                        state.favorites.push(ch);
+            // --- Favorites (Избранное / Сборное) ---
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("⭐ Избранное").strong().color(theme.text_primary));
+                if ui.small_button("+ Кисть").on_hover_text("Добавить текущую кисть в избранное").clicked() {
+                    if !state.favorites.contains(&tools.brush_char) {
+                        state.favorites.push(tools.brush_char);
                     }
                 }
-                state.add_favorite_input.clear();
-            }
-        });
+                if ui.small_button("📋 Вставить").on_hover_text("Вставить символы из буфера обмена в избранное").clicked() {
+                    actions.push(SidebarAction::PasteFavoritesFromClipboard);
+                }
+                if ui.small_button("Очистить").on_hover_text("Очистить список избранного").clicked() {
+                    state.favorites.clear();
+                }
+            });
 
-        if state.favorites.is_empty() {
-            ui.label(egui::RichText::new("(пусто — введите символы или нажмите «+ Кисть»)").color(theme.text_muted).size(11.0));
-        } else {
-            let fav_cols = dynamic_cols;
-            let fav_cell_size = Vec2::new(29.0, 29.0);
-            let mut to_remove = None;
+            // Field to insert / paste symbols
+            ui.horizontal(|ui| {
+                let input_width = (ui.available_width() - 85.0).clamp(180.0, avail_w - 85.0);
+                let edit_resp = ui.add(
+                    egui::TextEdit::singleline(&mut state.add_favorite_input)
+                        .hint_text("Вставить/ввести символы...")
+                        .desired_width(input_width),
+                );
+                let enter_pressed = edit_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                if ui.button("Добавить").clicked() || enter_pressed {
+                    for ch in state.add_favorite_input.chars() {
+                        if !ch.is_control() && !state.favorites.contains(&ch) {
+                            state.favorites.push(ch);
+                        }
+                    }
+                    state.add_favorite_input.clear();
+                }
+            });
+
+            if state.favorites.is_empty() {
+                ui.label(egui::RichText::new("(пусто — введите символы или нажмите «+ Кисть»)").color(theme.text_muted).size(11.0));
+            } else {
+                let fav_cols = dynamic_cols;
+                let fav_cell_size = Vec2::new(29.0, 29.0);
+                let mut to_remove = None;
 
             egui::Grid::new("favorites_grid")
                 .spacing(Vec2::new(3.0, 3.0))

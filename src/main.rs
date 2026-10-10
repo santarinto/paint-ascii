@@ -243,6 +243,14 @@ impl eframe::App for AsciiPaintApp {
         let theme_colors = self.theme.colors();
         let ctx = ui.ctx().clone();
 
+        let mut visuals = match self.theme {
+            crate::theme::AppTheme::Light => egui::Visuals::light(),
+            crate::theme::AppTheme::Dark => egui::Visuals::dark(),
+        };
+        visuals.panel_fill = theme_colors.panel_bg;
+        visuals.window_fill = theme_colors.panel_bg;
+        ctx.set_visuals(visuals);
+
         self.handle_keyboard_shortcuts(&ctx);
 
         // --- Top Menu Panel ---
@@ -298,7 +306,7 @@ impl eframe::App for AsciiPaintApp {
 
         // --- Right Sidebar Panel ---
         let mut sidebar_actions = Vec::new();
-        egui::Panel::right("right_panel")
+        egui::Panel::right("right_sidebar_panel_v2")
             .frame(
                 egui::Frame::new()
                     .fill(theme_colors.panel_bg)
@@ -308,6 +316,7 @@ impl eframe::App for AsciiPaintApp {
             .resizable(true)
             .min_size(430.0)
             .default_size(430.0)
+            .max_size(680.0)
             .show(ui, |ui| {
                 sidebar_actions = render_right_sidebar(
                     ui,
