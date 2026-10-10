@@ -10,6 +10,7 @@ pub enum MenuAction {
     About,
     TextInput,
     Copy,
+    ImportClipboard,
     ToggleTheme,
 }
 
@@ -87,6 +88,9 @@ pub fn render_top_menu(
                 }
                 if btn("📋", "Copy text to clipboard (Alt+C)", true) {
                     triggered_action = Some(MenuAction::Copy);
+                }
+                if btn("📥", "Import from clipboard (auto-expands canvas) (Alt+V)", true) {
+                    triggered_action = Some(MenuAction::ImportClipboard);
                 }
                 if btn("🌓", "Toggle light / dark theme", true) {
                     triggered_action = Some(MenuAction::ToggleTheme);

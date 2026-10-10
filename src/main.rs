@@ -50,9 +50,8 @@ impl AsciiPaintApp {
         self.set_toast("Copied to clipboard");
     }
 
-    fn paste_from_clipboard(&mut self, ctx: &egui::Context) {
-        if let Some(text) = ctx.input(|i| {
-            // Check clipboard
+    fn get_clipboard_text(&self, ctx: &egui::Context) -> Option<String> {
+        let from_event = ctx.input(|i| {
             i.events.iter().find_map(|e| {
                 if let egui::Event::Paste(s) = e {
                     Some(s.clone())
@@ -60,11 +59,48 @@ impl AsciiPaintApp {
                     None
                 }
             })
-        }) {
+        });
+
+        from_event.or_else(|| {
+            let mut clipboard = arboard::Clipboard::new().ok()?;
+            clipboard.get_text().ok()
+        })
+    }
+
+    fn paste_from_clipboard(&mut self, ctx: &egui::Context) {
+        if let Some(text) = self.get_clipboard_text(ctx) {
+            if text.trim().is_empty() {
+                self.set_toast("Clipboard is empty");
+                return;
+            }
             self.history.push_state(self.grid.clone());
-            let (dest_x, dest_y) = self.viewport.selection.map(|s| (s.min_x, s.min_y)).or(self.viewport.hovered_cell).unwrap_or((0, 0));
-            self.grid.paste_region(dest_x, dest_y, &text, false, self.viewport.selection);
-            self.set_toast("Pasted from clipboard");
+            let (dest_x, dest_y) = self.viewport.selection
+                .map(|s| (s.min_x, s.min_y))
+                .or(self.viewport.hovered_cell)
+                .unwrap_or((0, 0));
+
+            self.grid.paste_region_expanding(dest_x, dest_y, &text, false);
+            self.sidebar.resize_w_str = self.grid.width.to_string();
+            self.sidebar.resize_h_str = self.grid.height.to_string();
+            self.set_toast(format!("Pasted & expanded canvas ({}×{})", self.grid.width, self.grid.height));
+        } else {
+            self.set_toast("Clipboard is empty");
+        }
+    }
+
+    fn import_from_clipboard(&mut self, ctx: &egui::Context) {
+        if let Some(text) = self.get_clipboard_text(ctx) {
+            if text.trim().is_empty() {
+                self.set_toast("Clipboard is empty");
+                return;
+            }
+            self.history.push_state(self.grid.clone());
+            self.grid.paste_region_expanding(0, 0, &text, false);
+            self.sidebar.resize_w_str = self.grid.width.to_string();
+            self.sidebar.resize_h_str = self.grid.height.to_string();
+            self.set_toast(format!("Imported from clipboard ({}×{})", self.grid.width, self.grid.height));
+        } else {
+            self.set_toast("Clipboard is empty");
         }
     }
 
@@ -100,6 +136,8 @@ impl AsciiPaintApp {
                 self.tools.current_tool = Tool::Select;
             } else if input.key_pressed(egui::Key::C) {
                 self.copy_to_clipboard(ctx);
+            } else if input.key_pressed(egui::Key::V) {
+                self.paste_from_clipboard(ctx);
             } else if input.key_pressed(egui::Key::S) {
                 self.save_txt_file();
             } else if input.key_pressed(egui::Key::O) {
@@ -122,6 +160,12 @@ impl AsciiPaintApp {
                 self.redo();
             } else if input.key_pressed(egui::Key::C) {
                 self.copy_to_clipboard(ctx);
+            } else if input.key_pressed(egui::Key::V) {
+                if shift {
+                    self.import_from_clipboard(ctx);
+                } else {
+                    self.paste_from_clipboard(ctx);
+                }
             } else if input.key_pressed(egui::Key::S) {
                 self.save_txt_file();
             } else if input.key_pressed(egui::Key::O) {
@@ -306,6 +350,9 @@ impl eframe::App for AsciiPaintApp {
                 }
                 MenuAction::Copy => {
                     self.copy_to_clipboard(&ctx);
+                }
+                MenuAction::ImportClipboard => {
+                    self.import_from_clipboard(&ctx);
                 }
                 MenuAction::ToggleTheme => {
                     self.theme = match self.theme {
