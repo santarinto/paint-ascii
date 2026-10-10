@@ -46,7 +46,29 @@ impl AsciiPaintApp {
         } else {
             self.grid.to_ascii_string()
         };
-        ctx.copy_text(text);
+        ctx.copy_text(text.clone());
+
+        let mut written = false;
+        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+            if clipboard.set_text(text.clone()).is_ok() {
+                written = true;
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        if !written {
+            use std::io::Write;
+            if let Ok(mut child) = std::process::Command::new("wl-copy")
+                .stdin(std::process::Stdio::piped())
+                .spawn()
+            {
+                if let Some(mut stdin) = child.stdin.take() {
+                    let _ = stdin.write_all(text.as_bytes());
+                }
+                let _ = child.wait();
+            }
+        }
+
         self.set_toast("Copied to clipboard");
     }
 
@@ -61,15 +83,55 @@ impl AsciiPaintApp {
             })
         });
 
-        from_event.or_else(|| {
-            let mut clipboard = arboard::Clipboard::new().ok()?;
-            clipboard.get_text().ok()
-        })
+        if let Some(s) = from_event {
+            if !s.is_empty() {
+                return Some(s);
+            }
+        }
+
+        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+            if let Ok(text) = clipboard.get_text() {
+                if !text.is_empty() {
+                    return Some(text);
+                }
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(output) = std::process::Command::new("wl-paste")
+                .arg("--no-newline")
+                .output()
+            {
+                if output.status.success() {
+                    if let Ok(text) = String::from_utf8(output.stdout) {
+                        if !text.is_empty() {
+                            return Some(text);
+                        }
+                    }
+                }
+            }
+
+            if let Ok(output) = std::process::Command::new("xclip")
+                .args(["-selection", "clipboard", "-o"])
+                .output()
+            {
+                if output.status.success() {
+                    if let Ok(text) = String::from_utf8(output.stdout) {
+                        if !text.is_empty() {
+                            return Some(text);
+                        }
+                    }
+                }
+            }
+        }
+
+        None
     }
 
     fn paste_from_clipboard(&mut self, ctx: &egui::Context) {
         if let Some(text) = self.get_clipboard_text(ctx) {
-            if text.trim().is_empty() {
+            if text.is_empty() {
                 self.set_toast("Clipboard is empty");
                 return;
             }
@@ -90,7 +152,7 @@ impl AsciiPaintApp {
 
     fn import_from_clipboard(&mut self, ctx: &egui::Context) {
         if let Some(text) = self.get_clipboard_text(ctx) {
-            if text.trim().is_empty() {
+            if text.is_empty() {
                 self.set_toast("Clipboard is empty");
                 return;
             }
@@ -543,7 +605,13 @@ impl eframe::App for AsciiPaintApp {
                                 added += 1;
                             }
                         }
-                        self.set_toast(format!("Added {} symbols to favorites", added));
+                        if added > 0 {
+                            self.set_toast(format!("Added {} symbols to favorites", added));
+                        } else {
+                            self.set_toast("No new symbols in clipboard");
+                        }
+                    } else {
+                        self.set_toast("Clipboard is empty");
                     }
                 }
             }
