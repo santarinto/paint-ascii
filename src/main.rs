@@ -1,4 +1,5 @@
 mod canvas;
+mod color;
 mod image_converter;
 mod model;
 mod theme;
@@ -198,6 +199,10 @@ impl AsciiPaintApp {
                 self.tools.current_tool = Tool::Pipette;
             } else if input.key_pressed(egui::Key::M) {
                 self.tools.current_tool = Tool::Select;
+            } else if input.key_pressed(egui::Key::R) {
+                self.tools.current_tool = Tool::DeleteRow;
+            } else if input.key_pressed(egui::Key::D) {
+                self.tools.current_tool = Tool::DeleteCol;
             } else if input.key_pressed(egui::Key::C) {
                 self.copy_to_clipboard(ctx);
             } else if input.key_pressed(egui::Key::V) {
@@ -328,6 +333,7 @@ impl eframe::App for AsciiPaintApp {
             .show(ui, |ui| {
                 menu_action = render_top_menu(
                     ui,
+                    &mut self.tools,
                     &theme_colors,
                     self.history.can_undo(),
                     self.history.can_redo(),
@@ -454,16 +460,27 @@ impl eframe::App for AsciiPaintApp {
                 CanvasAction::StrokeStarted => {
                     self.history.push_state(self.grid.clone());
                 }
-                CanvasAction::CellPainted(x, y, ch) => {
-                    self.grid.set(x, y, ch);
+                CanvasAction::CellPainted(x, y, ch, color) => {
+                    self.grid.set_colored(x, y, ch, color);
                 }
-                CanvasAction::FloodFill(x, y) => {
+                CanvasAction::FloodFill(x, y, ch, color) => {
                     self.history.push_state(self.grid.clone());
-                    self.grid.flood_fill(x, y, self.tools.brush_char, self.viewport.selection);
+                    self.grid.flood_fill(x, y, ch, color, self.viewport.selection);
                 }
-                CanvasAction::PipetteSampled(ch) => {
+                CanvasAction::PipetteSampled(ch, color) => {
                     self.tools.brush_char = ch;
-                    self.set_toast(format!("Picked brush: '{}'", ch));
+                    self.tools.brush_color = color;
+                    self.set_toast(format!("Picked: '{}' ({})", ch, color.name()));
+                }
+                CanvasAction::DeleteRow(row, mode) => {
+                    self.history.push_state(self.grid.clone());
+                    self.grid.delete_row(row, mode);
+                    self.set_toast(format!("Строка {} ({})", row + 1, mode.name()));
+                }
+                CanvasAction::DeleteCol(col, mode) => {
+                    self.history.push_state(self.grid.clone());
+                    self.grid.delete_col(col, mode);
+                    self.set_toast(format!("Столбец {} ({})", col + 1, mode.name()));
                 }
                 CanvasAction::AddCells(dir, count) => {
                     self.history.push_state(self.grid.clone());

@@ -1,5 +1,6 @@
-use eframe::egui::{self, Pos2, Rect, Sense, Stroke, Vec2};
-use crate::model::{CanvasGrid, Direction, RectBounds};
+use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
+use crate::color::ColorId;
+use crate::model::{CanvasGrid, ColShiftMode, Direction, RectBounds, RowShiftMode};
 use crate::theme::ThemeColors;
 use crate::tools::{Tool, ToolState};
 
@@ -42,9 +43,11 @@ impl Default for ViewportState {
 
 pub enum CanvasAction {
     StrokeStarted,
-    CellPainted(usize, usize, char),
-    FloodFill(usize, usize),
-    PipetteSampled(char),
+    CellPainted(usize, usize, char, ColorId),
+    FloodFill(usize, usize, char, ColorId),
+    PipetteSampled(char, ColorId),
+    DeleteRow(usize, RowShiftMode),
+    DeleteCol(usize, ColShiftMode),
     AddCells(Direction, usize),
     DelCells(Direction, usize),
     Cut,
@@ -182,10 +185,21 @@ pub fn render_canvas(
                     } else if pointer.secondary_clicked() && !ui.input(|i| i.modifiers.shift) {
                         state.zoom = (state.zoom / 1.5).max(0.25);
                     }
+                } else if tools.current_tool == Tool::DeleteRow {
+                    ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
+                    if pointer.primary_clicked() {
+                        actions.push(CanvasAction::DeleteRow(row, tools.row_shift_mode));
+                    }
+                } else if tools.current_tool == Tool::DeleteCol {
+                    ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
+                    if pointer.primary_clicked() {
+                        actions.push(CanvasAction::DeleteCol(col, tools.col_shift_mode));
+                    }
                 } else if (middle_clicked || middle_down) && !state.is_panning {
-                    // Middle-click always acts as Pipette
+                    // Middle-click always acts as Pipette (samples char AND color)
                     if let Some(ch) = grid.get(col, row) {
-                        actions.push(CanvasAction::PipetteSampled(ch));
+                        let color = grid.get_color(col, row).unwrap_or(ColorId::Default);
+                        actions.push(CanvasAction::PipetteSampled(ch, color));
                     }
                 } else if secondary_down && !state.is_panning {
                     // Right-click always acts as Eraser
@@ -193,7 +207,7 @@ pub fn render_canvas(
                         state.is_dragging_stroke = true;
                         actions.push(CanvasAction::StrokeStarted);
                     }
-                    actions.push(CanvasAction::CellPainted(col, row, ' '));
+                    actions.push(CanvasAction::CellPainted(col, row, ' ', ColorId::Default));
                 } else if primary_down && !state.is_panning {
                     if !state.is_dragging_stroke {
                         state.is_dragging_stroke = true;
@@ -201,11 +215,12 @@ pub fn render_canvas(
 
                         match tools.current_tool {
                             Tool::Fill => {
-                                actions.push(CanvasAction::FloodFill(col, row));
+                                actions.push(CanvasAction::FloodFill(col, row, tools.brush_char, tools.brush_color));
                             }
                             Tool::Pipette => {
                                 if let Some(ch) = grid.get(col, row) {
-                                    actions.push(CanvasAction::PipetteSampled(ch));
+                                    let color = grid.get_color(col, row).unwrap_or(ColorId::Default);
+                                    actions.push(CanvasAction::PipetteSampled(ch, color));
                                 }
                             }
                             Tool::Select => {
@@ -213,21 +228,21 @@ pub fn render_canvas(
                                 state.selection = Some(RectBounds::new(col, row, col, row));
                             }
                             Tool::Pencil => {
-                                actions.push(CanvasAction::CellPainted(col, row, tools.brush_char));
+                                actions.push(CanvasAction::CellPainted(col, row, tools.brush_char, tools.brush_color));
                             }
                             Tool::Eraser => {
-                                actions.push(CanvasAction::CellPainted(col, row, ' '));
+                                actions.push(CanvasAction::CellPainted(col, row, ' ', ColorId::Default));
                             }
-                            Tool::Scroll | Tool::Zoom => {}
+                            Tool::Scroll | Tool::Zoom | Tool::DeleteRow | Tool::DeleteCol => {}
                         }
                     } else {
                         // Continued drag
                         match tools.current_tool {
                             Tool::Pencil => {
-                                actions.push(CanvasAction::CellPainted(col, row, tools.brush_char));
+                                actions.push(CanvasAction::CellPainted(col, row, tools.brush_char, tools.brush_color));
                             }
                             Tool::Eraser => {
-                                actions.push(CanvasAction::CellPainted(col, row, ' '));
+                                actions.push(CanvasAction::CellPainted(col, row, ' ', ColorId::Default));
                             }
                             Tool::Select => {
                                 if let Some((start_c, start_r)) = state.selection_drag_start {
@@ -289,6 +304,7 @@ pub fn render_canvas(
 
                     let idx = row * grid.width + col;
                     let ch = grid.cells[idx];
+                    let col_id = grid.colors[idx];
                     if ch != ' ' {
                         let text = ch.to_string();
                         let text_pos = cell_rect.center();
@@ -297,9 +313,24 @@ pub fn render_canvas(
                             egui::Align2::CENTER_CENTER,
                             text,
                             font_id.clone(),
-                            theme.text_primary,
+                            col_id.to_color32(theme),
                         );
                     }
+                }
+            }
+
+            // Row or Column hover highlight indicator when DeleteRow or DeleteCol is active
+            if let Some((col, row)) = state.hovered_cell {
+                if tools.current_tool == Tool::DeleteRow {
+                    let row_y = canvas_rect.min.y + row as f32 * cell_size.y;
+                    let row_rect = Rect::from_min_size(Pos2::new(canvas_rect.min.x, row_y), Vec2::new(canvas_size.x, cell_size.y));
+                    painter.rect_filled(row_rect, 0.0, Color32::from_rgba_unmultiplied(230, 80, 80, 45));
+                    painter.rect_stroke(row_rect, 0.0, Stroke::new(1.0, Color32::from_rgb(230, 80, 80)), egui::StrokeKind::Outside);
+                } else if tools.current_tool == Tool::DeleteCol {
+                    let col_x = canvas_rect.min.x + col as f32 * cell_size.x;
+                    let col_rect = Rect::from_min_size(Pos2::new(col_x, canvas_rect.min.y), Vec2::new(cell_size.x, canvas_size.y));
+                    painter.rect_filled(col_rect, 0.0, Color32::from_rgba_unmultiplied(230, 80, 80, 45));
+                    painter.rect_stroke(col_rect, 0.0, Stroke::new(1.0, Color32::from_rgb(230, 80, 80)), egui::StrokeKind::Outside);
                 }
             }
 

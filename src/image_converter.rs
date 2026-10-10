@@ -122,12 +122,31 @@ pub fn render_grid_to_png(grid: &CanvasGrid, width_px: u32, height_px: u32) -> R
                 let px_start_y = (y as f32 * cell_h) as u32;
                 let px_end_y = (((y + 1) as f32 * cell_h) as u32).min(height_px);
 
-                let color = match ch {
-                    '█' => Rgba([20, 20, 20, 255]),
-                    '▓' => Rgba([60, 60, 60, 255]),
-                    '▒' => Rgba([120, 120, 120, 255]),
-                    '░' => Rgba([180, 180, 180, 255]),
-                    _ => Rgba([30, 30, 30, 255]),
+                let color_id = grid.get_color(x, y).unwrap_or(crate::color::ColorId::Default);
+                let color = match color_id {
+                    crate::color::ColorId::Default => match ch {
+                        '█' => Rgba([20, 20, 20, 255]),
+                        '▓' => Rgba([60, 60, 60, 255]),
+                        '▒' => Rgba([120, 120, 120, 255]),
+                        '░' => Rgba([180, 180, 180, 255]),
+                        _ => Rgba([30, 30, 30, 255]),
+                    },
+                    crate::color::ColorId::Black => Rgba([0, 0, 0, 255]),
+                    crate::color::ColorId::Red => Rgba([205, 49, 49, 255]),
+                    crate::color::ColorId::Green => Rgba([13, 188, 121, 255]),
+                    crate::color::ColorId::Yellow => Rgba([229, 229, 16, 255]),
+                    crate::color::ColorId::Blue => Rgba([36, 114, 200, 255]),
+                    crate::color::ColorId::Magenta => Rgba([188, 63, 188, 255]),
+                    crate::color::ColorId::Cyan => Rgba([17, 168, 205, 255]),
+                    crate::color::ColorId::White => Rgba([229, 229, 229, 255]),
+                    crate::color::ColorId::BrightBlack => Rgba([102, 102, 102, 255]),
+                    crate::color::ColorId::BrightRed => Rgba([241, 76, 76, 255]),
+                    crate::color::ColorId::BrightGreen => Rgba([35, 209, 139, 255]),
+                    crate::color::ColorId::BrightYellow => Rgba([245, 245, 67, 255]),
+                    crate::color::ColorId::BrightBlue => Rgba([59, 142, 234, 255]),
+                    crate::color::ColorId::BrightMagenta => Rgba([214, 112, 214, 255]),
+                    crate::color::ColorId::BrightCyan => Rgba([41, 184, 219, 255]),
+                    crate::color::ColorId::BrightWhite => Rgba([255, 255, 255, 255]),
                 };
 
                 for py in px_start_y..px_end_y {
