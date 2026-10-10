@@ -91,24 +91,29 @@ impl ColorId {
     }
 
     pub fn preview_color32(&self) -> Color32 {
+        let (r, g, b) = self.rgb();
+        Color32::from_rgb(r, g, b)
+    }
+
+    pub fn rgb(&self) -> (u8, u8, u8) {
         match self {
-            ColorId::Default => Color32::from_rgb(180, 180, 180),
-            ColorId::Black => Color32::from_rgb(20, 20, 20),
-            ColorId::Red => Color32::from_rgb(205, 49, 49),
-            ColorId::Green => Color32::from_rgb(13, 188, 121),
-            ColorId::Yellow => Color32::from_rgb(229, 229, 16),
-            ColorId::Blue => Color32::from_rgb(36, 114, 200),
-            ColorId::Magenta => Color32::from_rgb(188, 63, 188),
-            ColorId::Cyan => Color32::from_rgb(17, 168, 205),
-            ColorId::White => Color32::from_rgb(229, 229, 229),
-            ColorId::BrightBlack => Color32::from_rgb(102, 102, 102),
-            ColorId::BrightRed => Color32::from_rgb(241, 76, 76),
-            ColorId::BrightGreen => Color32::from_rgb(35, 209, 139),
-            ColorId::BrightYellow => Color32::from_rgb(245, 245, 67),
-            ColorId::BrightBlue => Color32::from_rgb(59, 142, 234),
-            ColorId::BrightMagenta => Color32::from_rgb(214, 112, 214),
-            ColorId::BrightCyan => Color32::from_rgb(41, 184, 219),
-            ColorId::BrightWhite => Color32::from_rgb(255, 255, 255),
+            ColorId::Default => (180, 180, 180),
+            ColorId::Black => (20, 20, 20),
+            ColorId::Red => (205, 49, 49),
+            ColorId::Green => (13, 188, 121),
+            ColorId::Yellow => (229, 229, 16),
+            ColorId::Blue => (36, 114, 200),
+            ColorId::Magenta => (188, 63, 188),
+            ColorId::Cyan => (17, 168, 205),
+            ColorId::White => (229, 229, 229),
+            ColorId::BrightBlack => (102, 102, 102),
+            ColorId::BrightRed => (241, 76, 76),
+            ColorId::BrightGreen => (35, 209, 139),
+            ColorId::BrightYellow => (245, 245, 67),
+            ColorId::BrightBlue => (59, 142, 234),
+            ColorId::BrightMagenta => (214, 112, 214),
+            ColorId::BrightCyan => (41, 184, 219),
+            ColorId::BrightWhite => (255, 255, 255),
         }
     }
 }

@@ -242,17 +242,17 @@ impl CanvasGrid {
     }
 
     pub fn from_ascii_str(s: &str) -> Self {
-        let lines: Vec<&str> = s.lines().collect();
-        if lines.is_empty() {
+        let rows = crate::ansi::parse_ansi_text(s);
+        if rows.is_empty() {
             return Self::new(60, 30);
         }
-        let height = lines.len();
-        let width = lines.iter().map(|l| l.chars().count()).max().unwrap_or(1).max(1);
+        let height = rows.len();
+        let width = rows.iter().map(|r| r.len()).max().unwrap_or(1).max(1);
 
         let mut grid = Self::new(width, height);
-        for (y, line) in lines.iter().enumerate() {
-            for (x, ch) in line.chars().enumerate() {
-                grid.set(x, y, ch);
+        for (y, row) in rows.iter().enumerate() {
+            for (x, (ch, color)) in row.iter().enumerate() {
+                grid.set_colored(x, y, *ch, *color);
             }
         }
         grid
@@ -546,12 +546,13 @@ impl CanvasGrid {
     }
 
     pub fn paste_region(&mut self, dest_x: usize, dest_y: usize, text: &str, transparent_space: bool, bounds: Option<RectBounds>) {
-        for (row_idx, line) in text.lines().enumerate() {
+        let rows = crate::ansi::parse_ansi_text(text);
+        for (row_idx, row) in rows.into_iter().enumerate() {
             let y = dest_y + row_idx;
             if y >= self.height {
                 break;
             }
-            for (col_idx, ch) in line.chars().enumerate() {
+            for (col_idx, (ch, color)) in row.into_iter().enumerate() {
                 let x = dest_x + col_idx;
                 if x >= self.width {
                     break;
@@ -564,7 +565,7 @@ impl CanvasGrid {
                 if transparent_space && ch == ' ' {
                     continue;
                 }
-                self.set(x, y, ch);
+                self.set_colored(x, y, ch, color);
             }
         }
     }
@@ -584,15 +585,30 @@ impl CanvasGrid {
         text: &str,
         transparent_space: bool,
     ) {
-        let lines: Vec<&str> = text.lines().collect();
-        if lines.is_empty() {
+        let rows = crate::ansi::parse_ansi_text(text);
+        if rows.is_empty() {
             return;
         }
-        let text_h = lines.len();
-        let text_w = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+        let text_h = rows.len();
+        let text_w = rows.iter().map(|r| r.len()).max().unwrap_or(0);
 
         self.ensure_dimensions(dest_x + text_w, dest_y + text_h);
-        self.paste_region(dest_x, dest_y, text, transparent_space, None);
+        for (row_idx, row) in rows.into_iter().enumerate() {
+            let y = dest_y + row_idx;
+            if y >= self.height {
+                break;
+            }
+            for (col_idx, (ch, color)) in row.into_iter().enumerate() {
+                let x = dest_x + col_idx;
+                if x >= self.width {
+                    break;
+                }
+                if transparent_space && ch == ' ' {
+                    continue;
+                }
+                self.set_colored(x, y, ch, color);
+            }
+        }
     }
 
     pub fn clear_region(&mut self, bounds: RectBounds) {
@@ -901,5 +917,37 @@ mod tests {
         grid.clear();
         assert_eq!(grid.get(1, 1), Some(' '));
         assert_eq!(grid.get_color(1, 1), Some(ColorId::Default));
+    }
+
+    #[test]
+    fn test_paste_clipped_at_bounds() {
+        let mut grid = CanvasGrid::new(4, 4);
+        // Paste 3x3 at (2, 2) on a 4x4 canvas: should be clipped at x=3 and y=3
+        let text = "ABC\nDEF\nGHI";
+        grid.paste_region(2, 2, text, false, None);
+
+        assert_eq!(grid.width, 4);
+        assert_eq!(grid.height, 4);
+        assert_eq!(grid.get(2, 2), Some('A'));
+        assert_eq!(grid.get(3, 2), Some('B'));
+        assert_eq!(grid.get(2, 3), Some('D'));
+        assert_eq!(grid.get(3, 3), Some('E'));
+    }
+
+    #[test]
+    fn test_ansi_colored_grid_import() {
+        let ansi_text = "\x1b[34m[#]\x1b[0m\n\x1b[92mOK!\x1b[0m";
+        let grid = CanvasGrid::from_ascii_str(ansi_text);
+
+        assert_eq!(grid.width, 3);
+        assert_eq!(grid.height, 2);
+        assert_eq!(grid.get(0, 0), Some('['));
+        assert_eq!(grid.get_color(0, 0), Some(ColorId::Blue));
+        assert_eq!(grid.get(1, 0), Some('#'));
+        assert_eq!(grid.get_color(1, 0), Some(ColorId::Blue));
+        assert_eq!(grid.get(0, 1), Some('O'));
+        assert_eq!(grid.get_color(0, 1), Some(ColorId::BrightGreen));
+        assert_eq!(grid.get(1, 1), Some('K'));
+        assert_eq!(grid.get_color(1, 1), Some(ColorId::BrightGreen));
     }
 }
