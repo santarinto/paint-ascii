@@ -55,6 +55,18 @@ pub fn render_modals(
                     ui.label(egui::RichText::new("Inspired by KirillLive ASCII Art Paint").color(theme.text_muted));
                     ui.separator();
                     ui.label("Full-featured ASCII and Unicode canvas editor in Rust & eframe/egui.");
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new("Горячие клавиши и управление:").strong());
+                    ui.label("• Shift + ЛКМ / Alt+M — выделить прямоугольную область");
+                    ui.label("• Печать клавиш при выделении — ввод текста в рамку с верхнего левого угла");
+                    ui.label("• Esc — снять выделение / отменить перенос блока");
+                    ui.label("• ✏ Карандаш (Alt+B) / 🖌 Кисть цвета (Alt+K)");
+                    ui.label("• 💧 Пипетка символа (Alt+I; -> Карандаш) / 🎨 Пипетка цвета (Alt+P; -> Кисть)");
+                    ui.label("• Курсор ✥ на выделении (инструмент ⛶) — перетащить блок по холсту");
+                    ui.label("• Ctrl+C / Ctrl+X — копировать / вырезать в ОЗУ и буфер");
+                    ui.label("• Ctrl+V — вставить блок (с сохранением цветов)");
+                    ui.label("• Ctrl+Z / Ctrl+Y — отмена и повтор действий");
+                    ui.label("• Delete — очистить содержимое выделения");
                     ui.add_space(8.0);
                     ui.hyperlink_to("Original Reference", "https://kirilllive.github.io/ASCII_Art_Paint/ascii_paint.html");
                     ui.hyperlink_to("GitHub Repository", "https://github.com/Kirilllive/ASCII_Art_Paint");

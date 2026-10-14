@@ -21,6 +21,7 @@ pub fn render_top_menu(
     ui: &mut egui::Ui,
     tools: &mut ToolState,
     theme: &ThemeColors,
+    console_profile: &mut crate::theme::ConsoleProfile,
     can_undo: bool,
     can_redo: bool,
     hovered_cell: Option<(usize, usize)>,
@@ -143,6 +144,19 @@ pub fn render_top_menu(
 
         ui.separator();
 
+        // --- Console Profile Selector ---
+        ui.label(egui::RichText::new("Terminal:").size(12.0).color(theme.text_muted));
+        egui::ComboBox::from_id_salt("console_profile_selector")
+            .selected_text(console_profile.name())
+            .width(135.0)
+            .show_ui(ui, |ui| {
+                for profile in crate::theme::ConsoleProfile::ALL {
+                    ui.selectable_value(console_profile, profile, profile.name());
+                }
+            });
+
+        ui.separator();
+
         // --- 16-Color Fixed ANSI Palette in a Single Horizontal Row ---
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing = Vec2::new(3.0, 0.0);
@@ -188,7 +202,7 @@ fn render_color_swatch(
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
     let is_selected = tools.brush_color == color;
 
-    ui.painter().rect_filled(rect, 3.0, color.preview_color32());
+    ui.painter().rect_filled(rect, 3.0, color.preview_color32(theme.console_profile));
 
     let stroke = if is_selected {
         Stroke::new(2.0, Color32::WHITE)

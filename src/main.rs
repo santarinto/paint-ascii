@@ -25,6 +25,7 @@ struct AsciiPaintApp {
     tools: ToolState,
     viewport: ViewportState,
     theme: AppTheme,
+    console_profile: crate::theme::ConsoleProfile,
     sidebar: RightSidebarState,
     modals: ModalsState,
 }
@@ -37,6 +38,7 @@ impl AsciiPaintApp {
             tools: ToolState::default(),
             viewport: ViewportState::default(),
             theme: AppTheme::Light,
+            console_profile: crate::theme::ConsoleProfile::KonsoleBreeze,
             sidebar: RightSidebarState::default(),
             modals: ModalsState::default(),
         }
@@ -334,7 +336,7 @@ impl AsciiPaintApp {
 
 impl eframe::App for AsciiPaintApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        let theme_colors = self.theme.colors();
+        let theme_colors = self.theme.colors(self.console_profile);
         let ctx = ui.ctx().clone();
 
         let mut visuals = match self.theme {
@@ -362,6 +364,7 @@ impl eframe::App for AsciiPaintApp {
                     ui,
                     &mut self.tools,
                     &theme_colors,
+                    &mut self.console_profile,
                     self.history.can_undo(),
                     self.history.can_redo(),
                     self.viewport.hovered_cell,

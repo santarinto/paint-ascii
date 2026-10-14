@@ -76,7 +76,7 @@ pub fn render_left_toolbar(
         // Active brush color indicator swatch
         let color_swatch_size = Vec2::new(34.0, 16.0);
         let (rect_col, resp_col) = ui.allocate_exact_size(color_swatch_size, Sense::hover());
-        ui.painter().rect_filled(rect_col, 4.0, tools.brush_color.preview_color32());
+        ui.painter().rect_filled(rect_col, 4.0, tools.brush_color.preview_color32(theme.console_profile));
         ui.painter().rect_stroke(rect_col, 4.0, Stroke::new(1.0, theme.panel_border), egui::StrokeKind::Outside);
         resp_col.on_hover_text(format!("Brush Color: {}", tools.brush_color.name()));
     });
