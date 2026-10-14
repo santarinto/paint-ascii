@@ -485,6 +485,15 @@ impl AsciiPaintApp {
         let is_load = ((ctrl || alt) && key_down(egui::Key::O))
             || (ctrl && input.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == "\x0f" || t == "щ" || t == "Щ")));
 
+        let is_zoom_in = (ctrl && (key_down(egui::Key::Plus) || key_down(egui::Key::Equals)))
+            || (ctrl && input.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == "+" || t == "=")));
+
+        let is_zoom_out = (ctrl && key_down(egui::Key::Minus))
+            || (ctrl && input.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == "-")));
+
+        let is_zoom_reset = ctrl && (key_down(egui::Key::Num0)
+            || input.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == "0")));
+
         if is_undo {
             self.viewport.is_typing = false;
             self.undo();
@@ -507,6 +516,12 @@ impl AsciiPaintApp {
             self.save_txt_file();
         } else if is_load {
             self.load_txt_file();
+        } else if is_zoom_in {
+            self.viewport.zoom_in();
+        } else if is_zoom_out {
+            self.viewport.zoom_out();
+        } else if is_zoom_reset {
+            self.viewport.zoom_reset();
         } else if alt {
             // Tool hotkeys with Alt
             if key_down(egui::Key::H) {
@@ -651,6 +666,10 @@ impl eframe::App for AsciiPaintApp {
         };
         visuals.panel_fill = theme_colors.panel_bg;
         visuals.window_fill = theme_colors.panel_bg;
+        visuals.extreme_bg_color = theme_colors.scrollbar_bg;
+        visuals.widgets.inactive.bg_fill = theme_colors.scrollbar_handle;
+        visuals.widgets.hovered.bg_fill = theme_colors.scrollbar_handle_hover;
+        visuals.widgets.active.bg_fill = theme_colors.accent;
         ctx.set_visuals(visuals);
 
         self.handle_keyboard_shortcuts(&ctx);

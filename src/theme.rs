@@ -169,6 +169,9 @@ pub struct ThemeColors {
     pub button_active: Color32,
     pub accent: Color32,
     pub shadow: Color32,
+    pub scrollbar_bg: Color32,
+    pub scrollbar_handle: Color32,
+    pub scrollbar_handle_hover: Color32,
     pub console_profile: ConsoleProfile,
 }
 
@@ -191,6 +194,9 @@ impl AppTheme {
                 button_active: Color32::from_rgb(175, 165, 210),
                 accent: Color32::from_rgb(110, 95, 165),
                 shadow: Color32::from_rgba_premultiplied(110, 95, 165, 60),
+                scrollbar_bg: Color32::from_rgb(222, 220, 234),
+                scrollbar_handle: Color32::from_rgb(180, 172, 205),
+                scrollbar_handle_hover: Color32::from_rgb(150, 138, 185),
                 console_profile: profile,
             },
             AppTheme::Dark => ThemeColors {
@@ -209,6 +215,9 @@ impl AppTheme {
                 button_active: Color32::from_rgb(90, 75, 130),
                 accent: Color32::from_rgb(160, 140, 230),
                 shadow: Color32::from_rgba_premultiplied(0, 0, 0, 100),
+                scrollbar_bg: Color32::from_rgb(18, 15, 30),
+                scrollbar_handle: Color32::from_rgb(55, 48, 80),
+                scrollbar_handle_hover: Color32::from_rgb(85, 75, 120),
                 console_profile: profile,
             },
         };

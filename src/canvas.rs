@@ -1,4 +1,6 @@
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
+use eframe::egui::scroll_area::{ScrollBarVisibility, ScrollSource};
+use eframe::egui::style::ScrollStyle;
 use crate::color::ColorId;
 use crate::model::{CanvasGrid, ColShiftMode, Direction, RectBounds, RowShiftMode};
 use crate::theme::ThemeColors;
@@ -84,11 +86,11 @@ pub enum CanvasAction {
 
 impl ViewportState {
     pub fn zoom_in(&mut self) {
-        self.zoom = (self.zoom + 0.1).min(4.0);
+        self.zoom = (self.zoom * 1.045).min(5.0);
     }
 
     pub fn zoom_out(&mut self) {
-        self.zoom = (self.zoom - 0.1).max(0.25);
+        self.zoom = (self.zoom / 1.045).max(0.25);
     }
 
     pub fn zoom_reset(&mut self) {
@@ -140,52 +142,104 @@ pub fn render_canvas(
 
     let ctrl_down = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
 
+    let mut scroll_style = ScrollStyle::solid();
+    scroll_style.bar_width = 10.0;
+    scroll_style.bar_inner_margin = 2.0;
+    scroll_style.bar_outer_margin = 2.0;
+    scroll_style.handle_min_length = 24.0;
+    ui.spacing_mut().scroll = scroll_style;
+
     egui::ScrollArea::both()
+        .id_salt("canvas_scroll_area")
         .auto_shrink([false, false])
-        .scroll([!ctrl_down, !ctrl_down])
+        .scroll_source(ScrollSource {
+            mouse_wheel: !ctrl_down,
+            ..Default::default()
+        })
+        .scroll_bar_visibility(ScrollBarVisibility::VisibleWhenNeeded)
         .show(ui, |ui| {
             let viewport_size = ui.available_size();
-            let content_w = (canvas_size.x + margin * 2.0).max(viewport_size.x);
-            let content_h = (canvas_size.y + margin * 2.0).max(viewport_size.y);
-            let total_content_size = Vec2::new(content_w, content_h);
 
+            // Check if canvas + side controls fit comfortably in viewport
+            let needed_side_space = 45.0;
+            let fits_x = canvas_size.x + needed_side_space * 2.0 <= viewport_size.x;
+            let fits_y = canvas_size.y + needed_side_space * 2.0 <= viewport_size.y;
+
+            let content_w = if fits_x {
+                viewport_size.x
+            } else {
+                canvas_size.x + margin * 2.0
+            };
+
+            let content_h = if fits_y {
+                viewport_size.y
+            } else {
+                canvas_size.y + margin * 2.0
+            };
+
+            let total_content_size = Vec2::new(content_w, content_h);
             let (response, painter) = ui.allocate_painter(total_content_size, Sense::click_and_drag());
 
-            let offset_x = margin.max((viewport_size.x - canvas_size.x) / 2.0);
-            let offset_y = margin.max((viewport_size.y - canvas_size.y) / 2.0);
+            let offset_x = if fits_x {
+                (viewport_size.x - canvas_size.x) / 2.0
+            } else {
+                margin
+            };
+
+            let offset_y = if fits_y {
+                (viewport_size.y - canvas_size.y) / 2.0
+            } else {
+                margin
+            };
+
             let canvas_min = response.rect.min + Vec2::new(offset_x, offset_y);
             let canvas_rect = Rect::from_min_size(canvas_min, canvas_size);
 
-            // Ctrl + Mouse wheel zooming
-            let zoom_factor = ui.input(|i| {
-                let z = i.zoom_delta();
-                if (z - 1.0).abs() > 0.001 {
-                    return z;
-                }
-                if ctrl_down {
+            // Smooth zoom: 70% smoother step than before (15% -> 4.5% per tick, 1.045 factor)
+            let mut zoom_delta_factor = 1.0_f32;
+
+            // 1) Trackpad pinch gesture or native zoom event
+            let pinch_delta = ui.input(|i| i.zoom_delta());
+            if (pinch_delta - 1.0).abs() > 0.001 {
+                // Smoothed by 70%: reduce difference from 1.0 by 70%
+                zoom_delta_factor *= 1.0 + (pinch_delta - 1.0) * 0.30;
+            }
+
+            // 2) Ctrl + mouse wheel or Ctrl + smooth scroll
+            if ctrl_down {
+                let mut wheel_y = 0.0_f32;
+                ui.input(|i| {
                     for ev in &i.events {
                         if let egui::Event::MouseWheel { delta, .. } = ev {
-                            if delta.y > 0.0 {
-                                return 1.15;
-                            } else if delta.y < 0.0 {
-                                return 1.0 / 1.15;
-                            }
+                            wheel_y += delta.y;
                         }
                     }
-                    if i.smooth_scroll_delta.y > 0.0 {
-                        return 1.15;
-                    } else if i.smooth_scroll_delta.y < 0.0 {
-                        return 1.0 / 1.15;
+                });
+
+                if wheel_y.abs() > 0.001 {
+                    // 70% smoother: step size reduced from 15% to 4.5% per wheel tick
+                    zoom_delta_factor *= (1.045_f32).powf(wheel_y);
+                } else {
+                    let smooth_y = ui.input(|i| i.smooth_scroll_delta.y);
+                    if smooth_y.abs() > 0.001 {
+                        let normalized = (smooth_y / 25.0).clamp(-3.0, 3.0);
+                        zoom_delta_factor *= (1.045_f32).powf(normalized);
                     }
                 }
-                1.0
-            });
+            }
 
-            if (zoom_factor - 1.0).abs() > 0.001 {
-                if zoom_factor > 1.0 {
-                    state.zoom = (state.zoom * 1.15).min(5.0);
-                } else {
-                    state.zoom = (state.zoom / 1.15).max(0.25);
+            if (zoom_delta_factor - 1.0).abs() > 0.0005 {
+                let old_zoom = state.zoom;
+                let new_zoom = (old_zoom * zoom_delta_factor).clamp(0.25, 5.0);
+                if (new_zoom - old_zoom).abs() > 0.0001 {
+                    let actual_ratio = new_zoom / old_zoom;
+                    state.zoom = new_zoom;
+
+                    // Anchor zoom to mouse pointer (or center) so zooming stays centered and smooth
+                    let mouse_screen_pos = ui.input(|i| i.pointer.hover_pos()).unwrap_or_else(|| response.rect.center());
+                    let rel_pos = mouse_screen_pos - response.rect.min;
+                    let delta = rel_pos * (actual_ratio - 1.0);
+                    ui.scroll_with_delta(-delta);
                 }
             }
 
@@ -355,10 +409,27 @@ pub fn render_canvas(
                     }
                 } else if tools.current_tool == Tool::Zoom {
                     ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::ZoomIn);
+                    let zoom_step = 1.15_f32; // 70% smoother than previous 1.50
                     if pointer.primary_clicked() {
-                        state.zoom = (state.zoom * 1.5).min(5.0);
+                        let old_zoom = state.zoom;
+                        let new_zoom = (old_zoom * zoom_step).min(5.0);
+                        let ratio = new_zoom / old_zoom;
+                        state.zoom = new_zoom;
+                        if let Some(pos) = mouse_pos {
+                            let rel_pos = pos - response.rect.min;
+                            let delta = rel_pos * (ratio - 1.0);
+                            ui.scroll_with_delta(-delta);
+                        }
                     } else if pointer.secondary_clicked() && !shift_down {
-                        state.zoom = (state.zoom / 1.5).max(0.25);
+                        let old_zoom = state.zoom;
+                        let new_zoom = (old_zoom / zoom_step).max(0.25);
+                        let ratio = new_zoom / old_zoom;
+                        state.zoom = new_zoom;
+                        if let Some(pos) = mouse_pos {
+                            let rel_pos = pos - response.rect.min;
+                            let delta = rel_pos * (ratio - 1.0);
+                            ui.scroll_with_delta(-delta);
+                        }
                     }
                 } else if tools.current_tool == Tool::DeleteRow {
                     ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
@@ -696,3 +767,42 @@ fn render_context_menu(
         state.show_context_menu = false;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_smooth_zoom_step() {
+        let mut vp = ViewportState::default();
+        assert_eq!(vp.zoom, 1.0);
+
+        vp.zoom_in();
+        // Step is 1.045 (+4.5%, smoothed by 70% from 15%)
+        assert!((vp.zoom - 1.045).abs() < 0.001);
+
+        vp.zoom_out();
+        assert!((vp.zoom - 1.0).abs() < 0.002);
+    }
+
+    #[test]
+    fn test_zoom_clamping_and_reset() {
+        let mut vp = ViewportState::default();
+
+        // Zoom out repeatedly
+        for _ in 0..100 {
+            vp.zoom_out();
+        }
+        assert_eq!(vp.zoom, 0.25);
+
+        // Zoom in repeatedly
+        for _ in 0..200 {
+            vp.zoom_in();
+        }
+        assert_eq!(vp.zoom, 5.0);
+
+        vp.zoom_reset();
+        assert_eq!(vp.zoom, 1.0);
+    }
+}
+
