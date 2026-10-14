@@ -234,6 +234,64 @@ pub fn closest_ansi_color(r: u8, g: u8, b: u8) -> ColorId {
     best_color
 }
 
+/// Converts a CanvasGrid into a string with ANSI escape codes for colors
+pub fn grid_to_ansi(grid: &crate::model::CanvasGrid) -> String {
+    let mut out = String::new();
+
+    for y in 0..grid.height {
+        // Find line end without trailing blank cells
+        let mut row_len = grid.width;
+        while row_len > 0 {
+            let last_c = grid.get(row_len - 1, y).unwrap_or(' ');
+            let last_col = grid.get_color(row_len - 1, y).unwrap_or(ColorId::Default);
+            if last_c == ' ' && last_col == ColorId::Default {
+                row_len -= 1;
+            } else {
+                break;
+            }
+        }
+
+        let mut active_color = ColorId::Default;
+
+        for x in 0..row_len {
+            let ch = grid.get(x, y).unwrap_or(' ');
+            let color = grid.get_color(x, y).unwrap_or(ColorId::Default);
+
+            if color != active_color {
+                match color {
+                    ColorId::Default => out.push_str("\x1b[0m"),
+                    ColorId::Black => out.push_str("\x1b[30m"),
+                    ColorId::Red => out.push_str("\x1b[31m"),
+                    ColorId::Green => out.push_str("\x1b[32m"),
+                    ColorId::Yellow => out.push_str("\x1b[33m"),
+                    ColorId::Blue => out.push_str("\x1b[34m"),
+                    ColorId::Magenta => out.push_str("\x1b[35m"),
+                    ColorId::Cyan => out.push_str("\x1b[36m"),
+                    ColorId::White => out.push_str("\x1b[37m"),
+                    ColorId::BrightBlack => out.push_str("\x1b[90m"),
+                    ColorId::BrightRed => out.push_str("\x1b[91m"),
+                    ColorId::BrightGreen => out.push_str("\x1b[92m"),
+                    ColorId::BrightYellow => out.push_str("\x1b[93m"),
+                    ColorId::BrightBlue => out.push_str("\x1b[94m"),
+                    ColorId::BrightMagenta => out.push_str("\x1b[95m"),
+                    ColorId::BrightCyan => out.push_str("\x1b[96m"),
+                    ColorId::BrightWhite => out.push_str("\x1b[97m"),
+                }
+                active_color = color;
+            }
+
+            out.push(ch);
+        }
+
+        if active_color != ColorId::Default {
+            out.push_str("\x1b[0m");
+        }
+        out.push('\n');
+    }
+
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,5 +327,29 @@ mod tests {
         let row = &rows[0];
         assert_eq!(row[0], ('B', ColorId::BrightBlue));
         assert_eq!(row[4], ('G', ColorId::BrightGreen));
+    }
+
+    #[test]
+    fn test_ansi_export_roundtrip() {
+        let mut grid = crate::model::CanvasGrid::new(10, 3);
+        grid.set_colored(0, 0, 'H', ColorId::BrightGreen);
+        grid.set_colored(1, 0, 'i', ColorId::BrightGreen);
+        grid.set_colored(3, 0, '!', ColorId::BrightYellow);
+        grid.set_colored(0, 1, 'T', ColorId::BrightCyan);
+        grid.set_colored(1, 1, 'U', ColorId::BrightCyan);
+        grid.set_colored(2, 1, 'I', ColorId::BrightCyan);
+
+        let ansi_str = grid_to_ansi(&grid);
+        assert!(ansi_str.contains("\x1b[92mHi"));
+        assert!(ansi_str.contains("\x1b[93m!"));
+        assert!(ansi_str.contains("\x1b[96mTUI"));
+
+        let reimported = crate::model::CanvasGrid::from_ascii_str(&ansi_str);
+        assert_eq!(reimported.get(0, 0), Some('H'));
+        assert_eq!(reimported.get_color(0, 0), Some(ColorId::BrightGreen));
+        assert_eq!(reimported.get(3, 0), Some('!'));
+        assert_eq!(reimported.get_color(3, 0), Some(ColorId::BrightYellow));
+        assert_eq!(reimported.get(0, 1), Some('T'));
+        assert_eq!(reimported.get_color(0, 1), Some(ColorId::BrightCyan));
     }
 }

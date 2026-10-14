@@ -250,6 +250,10 @@ impl CanvasGrid {
         result
     }
 
+    pub fn to_ansi_string(&self) -> String {
+        crate::ansi::grid_to_ansi(self)
+    }
+
     pub fn from_ascii_str(s: &str) -> Self {
         let rows = crate::ansi::parse_ansi_text(s);
         if rows.is_empty() {

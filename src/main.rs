@@ -336,6 +336,18 @@ impl AsciiPaintApp {
             }
         }
     }
+
+    fn export_ansi_file(&mut self) {
+        if let Some(path) = rfd::FileDialog::new()
+            .add_filter("ANSI Art file", &["ans", "ansi", "txt"])
+            .save_file()
+        {
+            let content = self.grid.to_ansi_string();
+            if std::fs::write(&path, content).is_ok() {
+                self.set_toast(format!("Exported ANSI: {}", path.file_name().unwrap_or_default().to_string_lossy()));
+            }
+        }
+    }
 }
 
 impl eframe::App for AsciiPaintApp {
@@ -485,6 +497,9 @@ impl eframe::App for AsciiPaintApp {
                         AppTheme::Light => AppTheme::Dark,
                         AppTheme::Dark => AppTheme::Light,
                     };
+                }
+                MenuAction::ExportAnsi => {
+                    self.export_ansi_file();
                 }
             }
         }
@@ -660,6 +675,9 @@ impl eframe::App for AsciiPaintApp {
                             self.set_toast("Saved PNG image");
                         }
                     }
+                }
+                SidebarAction::ExportAnsi => {
+                    self.export_ansi_file();
                 }
                 SidebarAction::PasteFavoritesFromClipboard => {
                     if let Some(text) = self.get_clipboard_text(&ctx) {

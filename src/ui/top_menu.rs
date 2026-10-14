@@ -15,6 +15,7 @@ pub enum MenuAction {
     Copy,
     ImportClipboard,
     ToggleTheme,
+    ExportAnsi,
 }
 
 pub fn render_top_menu(
@@ -68,6 +69,9 @@ pub fn render_top_menu(
         }
         if btn("💾", "Save txt file (Alt+S)", true) {
             triggered_action = Some(MenuAction::Save);
+        }
+        if btn("💾 ANSI", "Export ANSI art with colors (.ans / .ansi)", true) {
+            triggered_action = Some(MenuAction::ExportAnsi);
         }
         if btn("↩", "Undo (Alt+Z)", can_undo) {
             triggered_action = Some(MenuAction::Undo);

@@ -63,6 +63,7 @@ pub enum SidebarAction {
     ConvertImgToAscii,
     ConvertImgToBraille,
     SavePng(usize, usize),
+    ExportAnsi,
     PasteFavoritesFromClipboard,
     PopulateFavoritesFromCanvas,
 }
@@ -371,6 +372,13 @@ pub fn render_right_sidebar(
             let w = state.png_w_str.parse::<usize>().unwrap_or(800);
             let h = state.png_h_str.parse::<usize>().unwrap_or(600);
             actions.push(SidebarAction::SavePng(w, h));
+        }
+
+        let export_ansi_btn = egui::Button::new("Export ANSI File (.ans)")
+            .fill(theme.button_bg)
+            .corner_radius(8.0);
+        if ui.add_sized([ui.available_width(), 28.0], export_ansi_btn).clicked() {
+            actions.push(SidebarAction::ExportAnsi);
         }
     });
 
