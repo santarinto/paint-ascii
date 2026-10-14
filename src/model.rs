@@ -1216,4 +1216,50 @@ mod tests {
         assert_eq!(grid.get(3, 2), Some('D'));
         assert_eq!(grid.get_color(3, 2), Some(ColorId::BrightBlue));
     }
+
+    #[test]
+    fn test_insert_key_stamping() {
+        let mut grid = CanvasGrid::new(10, 10);
+        let mut sel = RectBounds::new(1, 1, 1, 1);
+        let brush_char = '#';
+        let brush_color = ColorId::BrightYellow;
+
+        // Stamp with Insert 3 times
+        for _ in 0..3 {
+            grid.set_colored(sel.min_x, sel.min_y, brush_char, brush_color);
+            if sel.min_x + 1 < grid.width {
+                sel = RectBounds::new(sel.min_x + 1, sel.min_y, sel.min_x + 1, sel.min_y);
+            }
+        }
+
+        assert_eq!(grid.get(1, 1), Some('#'));
+        assert_eq!(grid.get_color(1, 1), Some(ColorId::BrightYellow));
+        assert_eq!(grid.get(2, 1), Some('#'));
+        assert_eq!(grid.get_color(2, 1), Some(ColorId::BrightYellow));
+        assert_eq!(grid.get(3, 1), Some('#'));
+        assert_eq!(grid.get_color(3, 1), Some(ColorId::BrightYellow));
+        assert_eq!(sel.min_x, 4);
+
+        // Stamp in multi-cell selection box (2x2)
+        let box_sel = RectBounds::new(0, 0, 1, 1);
+        let mut cx = box_sel.min_x;
+        let mut cy = box_sel.min_y;
+        let stamp_symbol = '@';
+
+        for _ in 0..4 {
+            grid.set_colored(cx, cy, stamp_symbol, ColorId::BrightCyan);
+            if cx < box_sel.max_x {
+                cx += 1;
+            } else if cy < box_sel.max_y {
+                cx = box_sel.min_x;
+                cy += 1;
+            }
+        }
+
+        assert_eq!(grid.get(0, 0), Some('@'));
+        assert_eq!(grid.get(1, 0), Some('@'));
+        assert_eq!(grid.get(0, 1), Some('@'));
+        assert_eq!(grid.get(1, 1), Some('@'));
+    }
 }
+

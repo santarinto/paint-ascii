@@ -36,8 +36,14 @@ Designed specifically for editing TUI interfaces, terminal mockups, ANSI art, an
   - **Block Drag & Drop**: Click and drag any selected area to move it across the canvas with color preservation and full undo/redo support.
   - **Crop Canvas**: Crop the entire canvas down to the active selection.
 
+- ⚡ **Quick Dial Group & Rapid Typing**
+  - **Quick Dial Slots (1..9, 0)**: 10 quick dial slots visible directly in the top bar on the right (`⚡ 1 2 3 4 5 6 7 8 9 0`).
+  - **Save to Slot (`Ctrl + 1..9, 0`)**: Save the active brush character to any quick dial slot.
+  - **Select from Slot (`1..9, 0`)**: Press any number key without modifiers to switch the active character to that slot's symbol (defaults to space `' '` if unassigned). Click slot badges in the top menu to select directly.
+  - **Insert Key Stamp (`Insert`)**: In keyboard mode, pressing `Insert` stamps the currently selected character into the active cell/frame and advances cursor to the right without replacing the active symbol.
+
 - 🔍 **Smooth Zooming & Scrollbars**
-  - **Ultra-Smooth Zooming**: Silky-smooth responsive zoom (4.5% step, 70% smoother) via `Ctrl + Mouse Wheel`, `Ctrl + +`, `Ctrl + -`, `Ctrl + 0` with cursor anchoring.
+  - **Ultra-Smooth Zooming**: Silky-smooth responsive zoom (4.5% step, 70% smoother) via `Ctrl + Mouse Wheel`, `Ctrl + +`, `Ctrl + -`, `Ctrl + Shift + 0` with cursor anchoring.
   - **Dynamic Scrollbars**: Themed horizontal and vertical scrollbars automatically appear when canvas exceeds the window, and hide when fully fitted.
   - **Zoom Tool** (`Alt+Z`): Left-click to zoom in, right-click to zoom out.
   - **Hand / Pan** (`Alt+H` or Middle-click drag): Freely pan around large canvases.
@@ -69,10 +75,13 @@ Designed specifically for editing TUI interfaces, terminal mockups, ANSI art, an
 | `Alt + R` | **Delete Row** | Remove or clear hovered row |
 | `Alt + D` | **Delete Col** | Remove or clear hovered column |
 
-### Selection & Cursor Navigation
+### Selection, Cursor & Quick Dial
 
 | Shortcut | Action | Description |
 | :--- | :--- | :--- |
+| `Insert` | **Insert Active Symbol** | Stamps the active character at cursor/selection and advances right (preserves brush symbol) |
+| `1` .. `9`, `0` | **Select Quick Dial Slot** | Switches active character to the symbol stored in slot `1..9, 0` (space if unassigned) |
+| `Ctrl + 1` .. `9`, `0` | **Save to Quick Dial Slot** | Saves current active brush character into quick dial slot `1..9, 0` |
 | `Shift + Ctrl + ←` `→` `↑` `↓` | **Move Frame & Contents** | Moves the selection frame together with all contained characters and colors |
 | `←` `→` `↑` `↓` | **Move Selection Box** | If no selection: spawns a 1×1 cursor at `(0, 0)`. If selection exists: moves frame without moving contents |
 | `Shift + ←` `→` `↑` `↓` | **Resize Selection** | Expands or contracts the active selection box boundaries |
@@ -89,7 +98,7 @@ Designed specifically for editing TUI interfaces, terminal mockups, ANSI art, an
 | `Ctrl + Mouse Wheel` | **Smooth Zoom** | Ultra-smooth zoom in / out anchored to mouse pointer (4.5% step) |
 | `Ctrl + +` / `Ctrl + =` | **Zoom In** | Smoothly zoom in viewport |
 | `Ctrl + -` | **Zoom Out** | Smoothly zoom out viewport |
-| `Ctrl + 0` | **Reset Zoom** | Reset zoom level to 100% |
+| `Ctrl + Shift + 0` | **Reset Zoom** | Reset zoom level to 100% |
 | `Shift + Left Drag` | **Create Selection** | Quickly draw a rectangular selection anywhere on canvas |
 | `Left Drag inside Selection` | **Move Block** | Drag and drop selected content to a new position |
 | `Middle Click` | **Quick Pipette** | Sample character and color from hovered cell |

@@ -390,7 +390,45 @@ impl AsciiPaintApp {
             }
         }
 
-        // 5. Arrow keys: move/resize selection or create 1x1 selection at (0, 0)
+        // 5. Insert key: in keyboard mode, stamps current brush character and advances
+        if key_down(egui::Key::Insert) {
+            let sel = self.viewport.selection.unwrap_or_else(|| {
+                RectBounds::new(0, 0, 0, 0)
+            });
+            if !self.viewport.is_typing {
+                self.history.push_state(self.grid.clone());
+                self.viewport.is_typing = true;
+            }
+            let ch = self.tools.brush_char;
+            if sel.width() == 1 && sel.height() == 1 {
+                self.grid.set_colored(sel.min_x, sel.min_y, ch, self.tools.brush_color);
+                if sel.min_x + 1 < self.grid.width {
+                    let nx = sel.min_x + 1;
+                    let ny = sel.min_y;
+                    self.viewport.selection = Some(RectBounds::new(nx, ny, nx, ny));
+                    self.viewport.text_cursor = Some((nx, ny));
+                } else {
+                    self.viewport.selection = Some(sel);
+                    self.viewport.text_cursor = Some((sel.min_x, sel.min_y));
+                }
+            } else {
+                let (mut cx, mut cy) = self.viewport.text_cursor.unwrap_or((sel.min_x, sel.min_y));
+                cx = cx.clamp(sel.min_x, sel.max_x);
+                cy = cy.clamp(sel.min_y, sel.max_y);
+                self.grid.set_colored(cx, cy, ch, self.tools.brush_color);
+                if cx < sel.max_x {
+                    cx += 1;
+                } else if cy < sel.max_y {
+                    cx = sel.min_x;
+                    cy += 1;
+                }
+                self.viewport.selection = Some(sel);
+                self.viewport.text_cursor = Some((cx, cy));
+            }
+            return;
+        }
+
+        // 6. Arrow keys: move/resize selection or create 1x1 selection at (0, 0)
         let left_pressed = key_down(egui::Key::ArrowLeft);
         let right_pressed = key_down(egui::Key::ArrowRight);
         let up_pressed = key_down(egui::Key::ArrowUp);
@@ -501,6 +539,46 @@ impl AsciiPaintApp {
             }
         }
 
+        let digit_keys = [
+            (egui::Key::Num1, 1),
+            (egui::Key::Num2, 2),
+            (egui::Key::Num3, 3),
+            (egui::Key::Num4, 4),
+            (egui::Key::Num5, 5),
+            (egui::Key::Num6, 6),
+            (egui::Key::Num7, 7),
+            (egui::Key::Num8, 8),
+            (egui::Key::Num9, 9),
+            (egui::Key::Num0, 0),
+        ];
+
+        // 7. Ctrl + 1..9, 0: Save active brush character to quick dial slot
+        if ctrl && !alt && !shift {
+            for &(key, slot_num) in &digit_keys {
+                let pressed = key_down(key)
+                    || input.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == &slot_num.to_string()));
+                if pressed {
+                    self.tools.set_quick_slot(slot_num, self.tools.brush_char);
+                    self.set_toast(format!("Слот {slot_num}: сохранен символ '{}'", self.tools.brush_char));
+                    return;
+                }
+            }
+        }
+
+        // 8. 1..9, 0 (without modifiers): Select character from quick dial slot
+        if !ctrl && !alt && !shift {
+            for &(key, slot_num) in &digit_keys {
+                let pressed = key_down(key)
+                    || input.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == &slot_num.to_string()));
+                if pressed {
+                    let ch = self.tools.get_quick_slot(slot_num);
+                    self.tools.brush_char = ch;
+                    self.set_toast(format!("Слот {slot_num}: выбран символ '{}'", ch));
+                    return;
+                }
+            }
+        }
+
         let is_copy = input.events.iter().any(|e| matches!(e, egui::Event::Copy))
             || ((ctrl || alt) && key_down(egui::Key::C))
             || (ctrl && input.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == "\x03" || t == "с" || t == "С")));
@@ -532,7 +610,7 @@ impl AsciiPaintApp {
         let is_zoom_out = (ctrl && key_down(egui::Key::Minus))
             || (ctrl && input.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == "-")));
 
-        let is_zoom_reset = ctrl && (key_down(egui::Key::Num0)
+        let is_zoom_reset = ctrl && shift && (key_down(egui::Key::Num0)
             || input.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == "0")));
 
         if is_undo {

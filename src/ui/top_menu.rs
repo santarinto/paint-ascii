@@ -1,4 +1,4 @@
-use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
+use eframe::egui::{self, Color32, Pos2, Sense, Stroke, Vec2};
 use crate::color::ColorId;
 use crate::model::{ColShiftMode, RowShiftMode};
 use crate::theme::ThemeColors;
@@ -186,8 +186,13 @@ pub fn render_top_menu(
             ui.label(egui::RichText::new("Выделение и печать текста:").strong());
             ui.label("• Shift + ЛКМ или инструмент ⛶ — выделить прямоугольную область");
             ui.label("• Печать клавиш при выделении — ввод текста в рамку с верхнего левого угла");
+            ui.label("• Insert — вставить текущий выбранный символ в позицию курсора");
+            ui.label("• 1..0 — выбрать символ из группы быстрого набора");
+            ui.label("• Ctrl+1..0 — сохранить текущий символ в быстрый набор");
             ui.label("• Esc — снять выделение / отменить перетаскивание блока");
-            ui.label("• Backspace / Enter / Стрелки — редактирование и навигация в рамке");
+            ui.label("• Backspace / Enter — удаление и перенос строки в рамке");
+            ui.label("• Стрелки — переместить рамку; Shift+Стрелки — изменить размер");
+            ui.label("• Shift+Ctrl+Стрелки — переместить рамку вместе с содержимым");
             ui.label("• Инструмент ⛶ (выделение) — перетащить блок курсором ✥");
             ui.label("• 💧 Пипетка символа (Alt+I) — взять символ и переключиться в ✏ Карандаш");
             ui.label("• 🎨 Пипетка цвета (Alt+P) — взять цвет и переключиться в 🖌 Кисть");
@@ -198,7 +203,7 @@ pub fn render_top_menu(
             ui.label("• Ctrl+Z / Ctrl+Y — отмена и повтор");
         });
 
-        // --- Hovered Cell Coordinates on the Right ---
+        // --- Quick Dial Group and Hovered Cell Coordinates on the Right ---
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if let Some((col, row)) = hovered_cell {
                 ui.label(
@@ -215,6 +220,20 @@ pub fn render_top_menu(
                         .color(theme.text_muted),
                 );
             }
+
+            ui.separator();
+
+            // Quick dial slots rendered in reverse order for right_to_left:
+            // [0, 9, 8, 7, 6, 5, 4, 3, 2, 1] -> visually appears as 1, 2, 3, 4, 5, 6, 7, 8, 9, 0
+            for &slot_num in &[0, 9, 8, 7, 6, 5, 4, 3, 2, 1] {
+                render_quick_slot(ui, tools, slot_num, theme);
+            }
+
+            ui.label(
+                egui::RichText::new("⚡")
+                    .size(13.0)
+                    .color(theme.accent),
+            ).on_hover_text("Группа быстрого набора (1..9, 0):\n• 1..0 — выбрать символ\n• Ctrl+1..0 — сохранить текущий символ");
         });
     });
 
@@ -245,5 +264,69 @@ fn render_color_swatch(
     let resp = resp.on_hover_text(color.name());
     if resp.clicked() {
         tools.brush_color = color;
+    }
+}
+
+fn render_quick_slot(
+    ui: &mut egui::Ui,
+    tools: &mut ToolState,
+    slot_num: usize,
+    theme: &ThemeColors,
+) {
+    let size = Vec2::new(24.0, 26.0);
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    let ch = tools.get_quick_slot(slot_num);
+    let is_active = tools.brush_char == ch && ch != ' ';
+
+    let bg = if is_active {
+        theme.button_active
+    } else if resp.hovered() {
+        theme.button_hover
+    } else {
+        Color32::TRANSPARENT
+    };
+
+    ui.painter().rect_filled(rect, 4.0, bg);
+    let stroke = if is_active {
+        Stroke::new(1.5, theme.accent)
+    } else if resp.hovered() {
+        Stroke::new(1.0, theme.accent)
+    } else {
+        Stroke::new(0.5, theme.panel_border)
+    };
+    ui.painter().rect_stroke(rect, 4.0, stroke, egui::StrokeKind::Outside);
+
+    // Slot number (small, top-left)
+    let num_pos = Pos2::new(rect.left() + 3.0, rect.top() + 1.0);
+    ui.painter().text(
+        num_pos,
+        egui::Align2::LEFT_TOP,
+        slot_num.to_string(),
+        egui::FontId::proportional(9.0),
+        if is_active { theme.accent } else { theme.text_muted },
+    );
+
+    // Slot character (centered at bottom)
+    let char_pos = Pos2::new(rect.center().x, rect.bottom() - 2.0);
+    let (char_str, char_color) = if ch == ' ' {
+        ("·".to_string(), theme.text_muted)
+    } else {
+        (ch.to_string(), theme.text_primary)
+    };
+    ui.painter().text(
+        char_pos,
+        egui::Align2::CENTER_BOTTOM,
+        char_str,
+        egui::FontId::monospace(12.0),
+        char_color,
+    );
+
+    let resp = resp.on_hover_text(format!(
+        "Слот быстрого набора {slot_num}: '{}'\n• Нажмите '{slot_num}' — выбрать символ\n• Нажмите Ctrl+{slot_num} — сохранить текущий символ '{}'",
+        ch, tools.brush_char
+    ));
+
+    if resp.clicked() {
+        tools.brush_char = ch;
     }
 }

@@ -61,6 +61,7 @@ pub struct ToolState {
     pub palette: Vec<char>,
     pub row_shift_mode: RowShiftMode,
     pub col_shift_mode: ColShiftMode,
+    pub quick_slots: [char; 10],
 }
 
 impl Default for ToolState {
@@ -72,7 +73,20 @@ impl Default for ToolState {
             palette: DEFAULT_PALETTE.chars().collect(),
             row_shift_mode: RowShiftMode::default(),
             col_shift_mode: ColShiftMode::default(),
+            quick_slots: [' '; 10],
         }
+    }
+}
+
+impl ToolState {
+    pub fn get_quick_slot(&self, slot_num: usize) -> char {
+        let idx = if slot_num == 0 { 9 } else { (slot_num - 1).min(9) };
+        self.quick_slots[idx]
+    }
+
+    pub fn set_quick_slot(&mut self, slot_num: usize, ch: char) {
+        let idx = if slot_num == 0 { 9 } else { (slot_num - 1).min(9) };
+        self.quick_slots[idx] = ch;
     }
 }
 
@@ -128,6 +142,26 @@ mod tests {
         }
         assert_eq!(state.current_tool, Tool::ColorBrush);
         assert_eq!(state.brush_color, ColorId::BrightRed);
+    }
+
+    #[test]
+    fn test_quick_slots() {
+        let mut state = ToolState::default();
+
+        // All slots default to space ' '
+        for slot in 0..=9 {
+            assert_eq!(state.get_quick_slot(slot), ' ');
+        }
+
+        // Set slots 1, 5, 0
+        state.set_quick_slot(1, '#');
+        state.set_quick_slot(5, '@');
+        state.set_quick_slot(0, '$');
+
+        assert_eq!(state.get_quick_slot(1), '#');
+        assert_eq!(state.get_quick_slot(5), '@');
+        assert_eq!(state.get_quick_slot(0), '$');
+        assert_eq!(state.get_quick_slot(2), ' ');
     }
 }
 
