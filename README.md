@@ -32,11 +32,13 @@ Designed specifically for editing TUI interfaces, terminal mockups, ANSI art, an
   - **1×1 Terminal Cursor**: Press any arrow key when no selection exists to create a 1×1 cell at `(0, 0)`. Typing immediately enters characters and advances the cell to the right across the row without automatic newline wrapping.
   - **Selection Text Box**: Typing into any rectangular selection writes text starting from the upper-left corner with auto-wrapping, `Enter` (new line), and `Backspace`.
   - **Blinking Cursor**: Live blinking cursor indicator showing the active typing position.
+  - **Move Frame with Contents (`Shift + Ctrl + Arrow`)**: Move active selection frame together with all of its contained characters and colors across the grid.
   - **Block Drag & Drop**: Click and drag any selected area to move it across the canvas with color preservation and full undo/redo support.
   - **Crop Canvas**: Crop the entire canvas down to the active selection.
 
-- 🔍 **Smooth Zooming & Pan**
-  - **`Ctrl + Mouse Wheel`**: Smooth, responsive zooming (from `0.25×` to `5.0×`) with scroll locking to prevent canvas drift.
+- 🔍 **Smooth Zooming & Scrollbars**
+  - **Ultra-Smooth Zooming**: Silky-smooth responsive zoom (4.5% step, 70% smoother) via `Ctrl + Mouse Wheel`, `Ctrl + +`, `Ctrl + -`, `Ctrl + 0` with cursor anchoring.
+  - **Dynamic Scrollbars**: Themed horizontal and vertical scrollbars automatically appear when canvas exceeds the window, and hide when fully fitted.
   - **Zoom Tool** (`Alt+Z`): Left-click to zoom in, right-click to zoom out.
   - **Hand / Pan** (`Alt+H` or Middle-click drag): Freely pan around large canvases.
 
@@ -71,7 +73,8 @@ Designed specifically for editing TUI interfaces, terminal mockups, ANSI art, an
 
 | Shortcut | Action | Description |
 | :--- | :--- | :--- |
-| `←` `→` `↑` `↓` | **Move Selection / Spawn Cursor** | If no selection: spawns a 1×1 cursor at `(0, 0)`. If selection exists: moves it |
+| `Shift + Ctrl + ←` `→` `↑` `↓` | **Move Frame & Contents** | Moves the selection frame together with all contained characters and colors |
+| `←` `→` `↑` `↓` | **Move Selection Box** | If no selection: spawns a 1×1 cursor at `(0, 0)`. If selection exists: moves frame without moving contents |
 | `Shift + ←` `→` `↑` `↓` | **Resize Selection** | Expands or contracts the active selection box boundaries |
 | `Any printable key` | **Type Text** | If selection exists: types text inside frame (advances 1×1 frame rightwards; wraps inside multi-cell box) |
 | `Backspace` | **Delete / Step Back** | Inside selection: erases previous character and steps cursor back |
@@ -83,7 +86,10 @@ Designed specifically for editing TUI interfaces, terminal mockups, ANSI art, an
 
 | Shortcut / Gesture | Action | Description |
 | :--- | :--- | :--- |
-| `Ctrl + Mouse Wheel` | **Smooth Zoom** | Zoom in / out centered on canvas with scroll-locking |
+| `Ctrl + Mouse Wheel` | **Smooth Zoom** | Ultra-smooth zoom in / out anchored to mouse pointer (4.5% step) |
+| `Ctrl + +` / `Ctrl + =` | **Zoom In** | Smoothly zoom in viewport |
+| `Ctrl + -` | **Zoom Out** | Smoothly zoom out viewport |
+| `Ctrl + 0` | **Reset Zoom** | Reset zoom level to 100% |
 | `Shift + Left Drag` | **Create Selection** | Quickly draw a rectangular selection anywhere on canvas |
 | `Left Drag inside Selection` | **Move Block** | Drag and drop selected content to a new position |
 | `Middle Click` | **Quick Pipette** | Sample character and color from hovered cell |

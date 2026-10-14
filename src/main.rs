@@ -398,7 +398,48 @@ impl AsciiPaintApp {
 
         if left_pressed || right_pressed || up_pressed || down_pressed {
             if let Some(mut sel) = self.viewport.selection {
-                if shift {
+                if shift && ctrl {
+                    // Shift + Ctrl + Arrow: move selection frame TOGETHER WITH ITS CONTENTS
+                    let mut dx: isize = 0;
+                    let mut dy: isize = 0;
+                    if left_pressed { dx -= 1; }
+                    if right_pressed { dx += 1; }
+                    if up_pressed { dy -= 1; }
+                    if down_pressed { dy += 1; }
+
+                    let can_move_x = (dx < 0 && sel.min_x > 0)
+                        || (dx > 0 && sel.max_x + 1 < self.grid.width);
+                    let can_move_y = (dy < 0 && sel.min_y > 0)
+                        || (dy > 0 && sel.max_y + 1 < self.grid.height);
+
+                    if can_move_x || can_move_y {
+                        let new_x = if dx < 0 && sel.min_x > 0 {
+                            sel.min_x - 1
+                        } else if dx > 0 && sel.max_x + 1 < self.grid.width {
+                            sel.min_x + 1
+                        } else {
+                            sel.min_x
+                        };
+
+                        let new_y = if dy < 0 && sel.min_y > 0 {
+                            sel.min_y - 1
+                        } else if dy > 0 && sel.max_y + 1 < self.grid.height {
+                            sel.min_y + 1
+                        } else {
+                            sel.min_y
+                        };
+
+                        if new_x != sel.min_x || new_y != sel.min_y {
+                            self.history.push_state(self.grid.clone());
+                            let new_bounds = self.grid.move_region(sel, new_x, new_y);
+                            self.viewport.selection = Some(new_bounds);
+                            self.viewport.text_cursor = Some((new_bounds.min_x, new_bounds.min_y));
+                            self.viewport.is_typing = false;
+                            self.set_toast(format!("Moved selection contents to ({}, {})", new_bounds.min_x, new_bounds.min_y));
+                        }
+                    }
+                    return;
+                } else if shift {
                     // Shift + arrow: resize selection
                     if right_pressed {
                         sel.max_x = (sel.max_x + 1).min(self.grid.width.saturating_sub(1));

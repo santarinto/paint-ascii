@@ -678,6 +678,13 @@ impl CanvasGrid {
             }
         }
     }
+
+    pub fn move_region(&mut self, bounds: RectBounds, dest_x: usize, dest_y: usize) -> RectBounds {
+        let (block, _) = self.copy_region_block(bounds);
+        self.clear_region(bounds);
+        self.paste_block(dest_x, dest_y, &block);
+        RectBounds::new(dest_x, dest_y, dest_x + block.width - 1, dest_y + block.height - 1)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1180,5 +1187,33 @@ mod tests {
         assert_eq!(sel.min_x, 4);
         assert_eq!(sel.min_y, 1);
         assert_eq!(grid.get(0, 2), Some(' ')); // no wrapping
+    }
+
+    #[test]
+    fn test_move_region() {
+        let mut grid = CanvasGrid::new(10, 10);
+        grid.set_colored(1, 1, 'A', ColorId::BrightRed);
+        grid.set_colored(2, 1, 'B', ColorId::BrightGreen);
+        grid.set_colored(1, 2, 'C', ColorId::BrightYellow);
+        grid.set_colored(2, 2, 'D', ColorId::BrightBlue);
+
+        let sel = RectBounds::new(1, 1, 2, 2);
+        // Move right by 1 cell to (2, 1)
+        let new_bounds = grid.move_region(sel, 2, 1);
+
+        assert_eq!(new_bounds, RectBounds::new(2, 1, 3, 2));
+        // Vacated cells should be cleared to blank space
+        assert_eq!(grid.get(1, 1), Some(' '));
+        assert_eq!(grid.get(1, 2), Some(' '));
+
+        // Destination cells should have the moved content and colors
+        assert_eq!(grid.get(2, 1), Some('A'));
+        assert_eq!(grid.get_color(2, 1), Some(ColorId::BrightRed));
+        assert_eq!(grid.get(3, 1), Some('B'));
+        assert_eq!(grid.get_color(3, 1), Some(ColorId::BrightGreen));
+        assert_eq!(grid.get(2, 2), Some('C'));
+        assert_eq!(grid.get_color(2, 2), Some(ColorId::BrightYellow));
+        assert_eq!(grid.get(3, 2), Some('D'));
+        assert_eq!(grid.get_color(3, 2), Some(ColorId::BrightBlue));
     }
 }
