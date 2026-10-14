@@ -374,7 +374,11 @@ pub fn render_right_sidebar(
             actions.push(SidebarAction::SavePng(w, h));
         }
 
-        let export_ansi_btn = egui::Button::new("Export ANSI File (.ans)")
+        ui.separator();
+
+        // --- Export ANSI Art ---
+        ui.label(egui::RichText::new("ANSI Art (.ans / .ansi)").strong().color(theme.text_primary));
+        let export_ansi_btn = egui::Button::new("💾 Export ANSI File")
             .fill(theme.button_bg)
             .corner_radius(8.0);
         if ui.add_sized([ui.available_width(), 28.0], export_ansi_btn).clicked() {

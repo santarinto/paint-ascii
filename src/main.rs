@@ -9,8 +9,9 @@ mod ui;
 
 use eframe::egui::{self, Margin};
 use canvas::{render_canvas, CanvasAction, ViewportState};
+use color::ColorId;
 use image_converter::{convert_image_to_ascii, convert_image_to_braille, render_grid_to_png};
-use model::{CanvasGrid, HistoryManager};
+use model::{BlockData, CanvasGrid, HistoryManager, RectBounds};
 use theme::AppTheme;
 use tools::{Tool, ToolState};
 use ui::bottom_controls::{render_scene_controls, render_status_bar};
@@ -28,6 +29,8 @@ struct AsciiPaintApp {
     console_profile: crate::theme::ConsoleProfile,
     sidebar: RightSidebarState,
     modals: ModalsState,
+    internal_clipboard: Option<String>,
+    internal_block: Option<BlockData>,
 }
 
 impl AsciiPaintApp {
@@ -41,15 +44,23 @@ impl AsciiPaintApp {
             console_profile: crate::theme::ConsoleProfile::KonsoleBreeze,
             sidebar: RightSidebarState::default(),
             modals: ModalsState::default(),
+            internal_clipboard: None,
+            internal_block: None,
         }
     }
 
     fn copy_to_clipboard(&mut self, ctx: &egui::Context) {
-        let text = if let Some(sel) = self.viewport.selection {
-            self.grid.copy_region(sel)
+        let (text, block) = if let Some(sel) = self.viewport.selection {
+            let (b, t) = self.grid.copy_region_block(sel);
+            (t, Some(b))
         } else {
-            self.grid.to_ascii_string()
+            (self.grid.to_ascii_string(), None)
         };
+
+        // Always save to internal RAM buffer
+        self.internal_clipboard = Some(text.clone());
+        self.internal_block = block;
+
         ctx.copy_text(text.clone());
 
         let mut written = false;
@@ -62,6 +73,7 @@ impl AsciiPaintApp {
         #[cfg(target_os = "linux")]
         if !written {
             use std::io::Write;
+            // 1. Try wl-copy
             if let Ok(mut child) = std::process::Command::new("wl-copy")
                 .stdin(std::process::Stdio::piped())
                 .spawn()
@@ -69,11 +81,43 @@ impl AsciiPaintApp {
                 if let Some(mut stdin) = child.stdin.take() {
                     let _ = stdin.write_all(text.as_bytes());
                 }
-                let _ = child.wait();
+                if child.wait().map(|s| s.success()).unwrap_or(false) {
+                    written = true;
+                }
+            }
+
+            // 2. Try xclip
+            if !written {
+                if let Ok(mut child) = std::process::Command::new("xclip")
+                    .args(["-selection", "clipboard"])
+                    .stdin(std::process::Stdio::piped())
+                    .spawn()
+                {
+                    if let Some(mut stdin) = child.stdin.take() {
+                        let _ = stdin.write_all(text.as_bytes());
+                    }
+                    if child.wait().map(|s| s.success()).unwrap_or(false) {
+                        written = true;
+                    }
+                }
+            }
+
+            // 3. Try xsel
+            if !written {
+                if let Ok(mut child) = std::process::Command::new("xsel")
+                    .args(["--clipboard", "--input"])
+                    .stdin(std::process::Stdio::piped())
+                    .spawn()
+                {
+                    if let Some(mut stdin) = child.stdin.take() {
+                        let _ = stdin.write_all(text.as_bytes());
+                    }
+                    let _ = child.wait();
+                }
             }
         }
 
-        self.set_toast("Copied to clipboard");
+        self.set_toast("Copied to clipboard / RAM");
     }
 
     fn get_clipboard_text(&self, ctx: &egui::Context) -> Option<String> {
@@ -128,17 +172,33 @@ impl AsciiPaintApp {
                     }
                 }
             }
+
+            if let Ok(output) = std::process::Command::new("xsel")
+                .args(["--clipboard", "--output"])
+                .output()
+            {
+                if output.status.success() {
+                    if let Ok(text) = String::from_utf8(output.stdout) {
+                        if !text.is_empty() {
+                            return Some(text);
+                        }
+                    }
+                }
+            }
         }
 
-        None
+        // Internal RAM buffer fallback
+        self.internal_clipboard.clone()
     }
 
     fn cut_to_clipboard(&mut self, ctx: &egui::Context) {
         if let Some(sel) = self.viewport.selection {
-            self.copy_to_clipboard(ctx);
             self.history.push_state(self.grid.clone());
+            self.copy_to_clipboard(ctx);
             self.grid.clear_region(sel);
-            self.set_toast("Cut selected region to clipboard");
+            self.set_toast("Cut selected region to clipboard / RAM");
+        } else {
+            self.set_toast("No selection to cut");
         }
     }
 
@@ -154,8 +214,25 @@ impl AsciiPaintApp {
                 .or(self.viewport.hovered_cell)
                 .unwrap_or((0, 0));
 
-            self.grid.paste_region(dest_x, dest_y, &text, false, None);
+            // If pasting text that matches our internal RAM block, paste with full colors preserved
+            let (w, h) = if self.internal_clipboard.as_deref() == Some(&text) && self.internal_block.is_some() {
+                let block = self.internal_block.as_ref().unwrap();
+                let bw = block.width;
+                let bh = block.height;
+                self.grid.paste_block(dest_x, dest_y, block);
+                (bw, bh)
+            } else {
+                let rows = crate::ansi::parse_ansi_text(&text);
+                let bh = rows.len().max(1);
+                let bw = rows.iter().map(|r| r.len()).max().unwrap_or(1);
+                self.grid.paste_region(dest_x, dest_y, &text, false, None);
+                (bw, bh)
+            };
+
             self.add_chars_to_favorites(&text);
+            let sel_max_x = (dest_x + w.saturating_sub(1)).min(self.grid.width.saturating_sub(1));
+            let sel_max_y = (dest_y + h.saturating_sub(1)).min(self.grid.height.saturating_sub(1));
+            self.viewport.selection = Some(RectBounds::new(dest_x, dest_y, sel_max_x, sel_max_y));
             self.set_toast(format!("Pasted at ({}, {}) [clipped to canvas]", dest_x, dest_y));
         } else {
             self.set_toast("Clipboard is empty");
@@ -178,7 +255,6 @@ impl AsciiPaintApp {
             self.set_toast("Clipboard is empty");
         }
     }
-
     fn add_chars_to_favorites(&mut self, text: &str) {
         for ch in text.chars() {
             if !ch.is_control() && ch != ' ' && !self.sidebar.favorites.contains(&ch) {
@@ -194,8 +270,9 @@ impl AsciiPaintApp {
     fn handle_keyboard_shortcuts(&mut self, ctx: &egui::Context) {
         let input = ctx.input(|i| i.clone());
 
-        // Do not intercept hotkeys if modal or text field has focus
-        if self.modals.show_text_edit || self.modals.show_palette_edit {
+        // Do not intercept hotkeys if an egui TextEdit or modal has focus
+        let is_text_focused = ctx.memory(|m| m.focused().is_some());
+        if is_text_focused || self.modals.show_text_edit || self.modals.show_palette_edit {
             return;
         }
 
@@ -203,90 +280,303 @@ impl AsciiPaintApp {
         let ctrl = input.modifiers.command || input.modifiers.ctrl;
         let shift = input.modifiers.shift;
 
-        // Delete / Backspace always clears active selection
-        if input.key_pressed(egui::Key::Delete) || input.key_pressed(egui::Key::Backspace) {
+        let key_down = |target: egui::Key| -> bool {
+            if input.key_pressed(target) {
+                return true;
+            }
+            input.events.iter().any(|e| match e {
+                egui::Event::Key { key, physical_key, pressed: true, .. } => {
+                    *key == target || *physical_key == Some(target)
+                }
+                _ => false,
+            })
+        };
+
+        // 1. Escape cancels active block move or clears selection
+        if key_down(egui::Key::Escape) {
+            if let Some(moving) = self.viewport.moving_block.take() {
+                self.grid = moving.grid_before_pickup;
+            }
+            if self.viewport.selection.is_some() {
+                self.viewport.selection = None;
+                self.viewport.text_cursor = None;
+                self.viewport.selection_drag_start = None;
+                self.viewport.is_typing = false;
+                self.set_toast("Selection cleared (Esc)");
+                return;
+            }
+            if self.viewport.show_context_menu {
+                self.viewport.show_context_menu = false;
+                return;
+            }
+            return;
+        }
+
+        // 2. Delete key always clears active selection
+        if key_down(egui::Key::Delete) {
             if let Some(sel) = self.viewport.selection {
                 self.history.push_state(self.grid.clone());
                 self.grid.clear_region(sel);
+                self.viewport.text_cursor = Some((sel.min_x, sel.min_y));
+                self.viewport.is_typing = false;
                 self.set_toast("Cleared selection");
+                return;
             }
         }
 
-        // Tools shortcuts
-        if alt {
-            if input.key_pressed(egui::Key::H) {
-                self.tools.current_tool = Tool::Scroll;
-            } else if input.key_pressed(egui::Key::Z) {
-                self.tools.current_tool = Tool::Zoom;
-            } else if input.key_pressed(egui::Key::B) {
-                self.tools.current_tool = Tool::Pencil;
-            } else if input.key_pressed(egui::Key::K) {
-                self.tools.current_tool = Tool::ColorBrush;
-            } else if input.key_pressed(egui::Key::E) {
-                self.tools.current_tool = Tool::Eraser;
-            } else if input.key_pressed(egui::Key::G) {
-                self.tools.current_tool = Tool::Fill;
-            } else if input.key_pressed(egui::Key::I) {
-                self.tools.current_tool = Tool::Pipette;
-            } else if input.key_pressed(egui::Key::P) {
-                self.tools.current_tool = Tool::ColorPipette;
-            } else if input.key_pressed(egui::Key::M) {
-                self.tools.current_tool = Tool::Select;
-            } else if input.key_pressed(egui::Key::R) {
-                self.tools.current_tool = Tool::DeleteRow;
-            } else if input.key_pressed(egui::Key::D) {
-                self.tools.current_tool = Tool::DeleteCol;
-            } else if input.key_pressed(egui::Key::C) {
-                self.copy_to_clipboard(ctx);
-            } else if input.key_pressed(egui::Key::X) {
-                self.cut_to_clipboard(ctx);
-            } else if input.key_pressed(egui::Key::V) {
-                self.paste_from_clipboard(ctx);
-            } else if input.key_pressed(egui::Key::S) {
-                self.save_txt_file();
-            } else if input.key_pressed(egui::Key::O) {
-                self.load_txt_file();
-            } else if input.key_pressed(egui::Key::Z) {
-                if shift {
-                    self.redo();
-                } else {
-                    self.undo();
+        // 3. Backspace key: inside selection, deletes previous character and moves cursor back
+        if key_down(egui::Key::Backspace) {
+            if let Some(mut sel) = self.viewport.selection {
+                if !self.viewport.is_typing {
+                    self.history.push_state(self.grid.clone());
+                    self.viewport.is_typing = true;
                 }
-            }
-        } else if ctrl {
-            if input.key_pressed(egui::Key::Z) {
-                if shift {
-                    self.redo();
-                } else {
-                    self.undo();
+                if sel.width() == 1 && sel.height() == 1 {
+                    if sel.min_x > 0 {
+                        sel.min_x -= 1;
+                        sel.max_x -= 1;
+                        self.grid.set_colored(sel.min_x, sel.min_y, ' ', ColorId::Default);
+                        self.viewport.selection = Some(sel);
+                        self.viewport.text_cursor = Some((sel.min_x, sel.min_y));
+                    } else {
+                        self.grid.set_colored(sel.min_x, sel.min_y, ' ', ColorId::Default);
+                    }
+                    return;
                 }
-            } else if input.key_pressed(egui::Key::Y) {
-                self.redo();
-            } else if input.key_pressed(egui::Key::C) {
-                self.copy_to_clipboard(ctx);
-            } else if input.key_pressed(egui::Key::X) {
-                self.cut_to_clipboard(ctx);
-            } else if input.key_pressed(egui::Key::V) {
-                if shift {
-                    self.import_from_clipboard(ctx);
-                } else {
-                    self.paste_from_clipboard(ctx);
-                }
-            } else if input.key_pressed(egui::Key::S) {
-                self.save_txt_file();
-            } else if input.key_pressed(egui::Key::O) {
-                self.load_txt_file();
-            }
-        } else {
-            if input.key_pressed(egui::Key::Escape) {
-                self.viewport.selection = None;
-            }
 
-            // Any printable key changes active brush character!
+                let (mut cx, mut cy) = self.viewport.text_cursor.unwrap_or((sel.min_x, sel.min_y));
+                if cx > sel.min_x {
+                    cx -= 1;
+                    self.grid.set_colored(cx, cy, ' ', ColorId::Default);
+                    self.viewport.text_cursor = Some((cx, cy));
+                } else if cy > sel.min_y {
+                    cy -= 1;
+                    cx = sel.max_x;
+                    self.grid.set_colored(cx, cy, ' ', ColorId::Default);
+                    self.viewport.text_cursor = Some((cx, cy));
+                } else {
+                    self.grid.set_colored(cx, cy, ' ', ColorId::Default);
+                    self.viewport.text_cursor = Some((sel.min_x, sel.min_y));
+                }
+                return;
+            }
+        }
+
+        // 4. Enter key: inside selection, moves cursor to next line at sel.min_x
+        if key_down(egui::Key::Enter) {
+            if let Some(mut sel) = self.viewport.selection {
+                if !self.viewport.is_typing {
+                    self.history.push_state(self.grid.clone());
+                    self.viewport.is_typing = true;
+                }
+                if sel.width() == 1 && sel.height() == 1 {
+                    if sel.min_y + 1 < self.grid.height {
+                        sel.min_y += 1;
+                        sel.max_y += 1;
+                        sel.min_x = 0;
+                        sel.max_x = 0;
+                        self.viewport.selection = Some(sel);
+                        self.viewport.text_cursor = Some((0, sel.min_y));
+                    }
+                    return;
+                }
+
+                let (_cx, mut cy) = self.viewport.text_cursor.unwrap_or((sel.min_x, sel.min_y));
+                if cy < sel.max_y {
+                    cy += 1;
+                }
+                self.viewport.text_cursor = Some((sel.min_x, cy));
+                return;
+            }
+        }
+
+        // 5. Arrow keys: move/resize selection or create 1x1 selection at (0, 0)
+        let left_pressed = key_down(egui::Key::ArrowLeft);
+        let right_pressed = key_down(egui::Key::ArrowRight);
+        let up_pressed = key_down(egui::Key::ArrowUp);
+        let down_pressed = key_down(egui::Key::ArrowDown);
+
+        if left_pressed || right_pressed || up_pressed || down_pressed {
+            if let Some(mut sel) = self.viewport.selection {
+                if shift {
+                    // Shift + arrow: resize selection
+                    if right_pressed {
+                        sel.max_x = (sel.max_x + 1).min(self.grid.width.saturating_sub(1));
+                    }
+                    if down_pressed {
+                        sel.max_y = (sel.max_y + 1).min(self.grid.height.saturating_sub(1));
+                    }
+                    if left_pressed {
+                        if sel.max_x > sel.min_x {
+                            sel.max_x -= 1;
+                        }
+                    }
+                    if up_pressed {
+                        if sel.max_y > sel.min_y {
+                            sel.max_y -= 1;
+                        }
+                    }
+                    self.viewport.selection = Some(sel);
+                    let (mut cx, mut cy) = self.viewport.text_cursor.unwrap_or((sel.min_x, sel.min_y));
+                    cx = cx.clamp(sel.min_x, sel.max_x);
+                    cy = cy.clamp(sel.min_y, sel.max_y);
+                    self.viewport.text_cursor = Some((cx, cy));
+                } else {
+                    // Arrow keys without Shift: move selection box
+                    if left_pressed {
+                        if sel.min_x > 0 {
+                            sel.min_x -= 1;
+                            sel.max_x -= 1;
+                        }
+                    }
+                    if right_pressed {
+                        if sel.max_x + 1 < self.grid.width {
+                            sel.min_x += 1;
+                            sel.max_x += 1;
+                        }
+                    }
+                    if up_pressed {
+                        if sel.min_y > 0 {
+                            sel.min_y -= 1;
+                            sel.max_y -= 1;
+                        }
+                    }
+                    if down_pressed {
+                        if sel.max_y + 1 < self.grid.height {
+                            sel.min_y += 1;
+                            sel.max_y += 1;
+                        }
+                    }
+                    self.viewport.selection = Some(sel);
+                    self.viewport.text_cursor = Some((sel.min_x, sel.min_y));
+                }
+                return;
+            } else {
+                // If no selection, any arrow key spawns 1x1 selection at (0, 0)
+                self.viewport.selection = Some(RectBounds::new(0, 0, 0, 0));
+                self.viewport.text_cursor = Some((0, 0));
+                self.viewport.is_typing = false;
+                return;
+            }
+        }
+
+        let is_copy = input.events.iter().any(|e| matches!(e, egui::Event::Copy))
+            || ((ctrl || alt) && key_down(egui::Key::C))
+            || (ctrl && input.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == "\x03" || t == "с" || t == "С")));
+
+        let is_cut = input.events.iter().any(|e| matches!(e, egui::Event::Cut))
+            || ((ctrl || alt) && key_down(egui::Key::X))
+            || (ctrl && input.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == "\x18" || t == "ч" || t == "Ч")));
+
+        let is_paste = ((ctrl || alt) && key_down(egui::Key::V))
+            || (ctrl && input.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == "\x16" || t == "м" || t == "М")))
+            || input.events.iter().any(|e| matches!(e, egui::Event::Paste(_)));
+
+        let is_undo = ((ctrl || alt) && !shift && key_down(egui::Key::Z))
+            || (ctrl && !shift && input.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == "\x1a" || t == "я" || t == "Я")));
+
+        let is_redo = ((ctrl || alt) && shift && key_down(egui::Key::Z))
+            || ((ctrl || alt) && key_down(egui::Key::Y))
+            || (ctrl && input.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == "\x19" || t == "н" || t == "Н")));
+
+        let is_save = ((ctrl || alt) && key_down(egui::Key::S))
+            || (ctrl && input.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == "\x13" || t == "ы" || t == "Ы")));
+
+        let is_load = ((ctrl || alt) && key_down(egui::Key::O))
+            || (ctrl && input.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == "\x0f" || t == "щ" || t == "Щ")));
+
+        if is_undo {
+            self.viewport.is_typing = false;
+            self.undo();
+        } else if is_redo {
+            self.viewport.is_typing = false;
+            self.redo();
+        } else if is_cut {
+            self.viewport.is_typing = false;
+            self.cut_to_clipboard(ctx);
+        } else if is_copy {
+            self.copy_to_clipboard(ctx);
+        } else if is_paste {
+            self.viewport.is_typing = false;
+            if shift {
+                self.import_from_clipboard(ctx);
+            } else {
+                self.paste_from_clipboard(ctx);
+            }
+        } else if is_save {
+            self.save_txt_file();
+        } else if is_load {
+            self.load_txt_file();
+        } else if alt {
+            // Tool hotkeys with Alt
+            if key_down(egui::Key::H) {
+                self.tools.current_tool = Tool::Scroll;
+            } else if key_down(egui::Key::Z) {
+                self.tools.current_tool = Tool::Zoom;
+            } else if key_down(egui::Key::B) {
+                self.tools.current_tool = Tool::Pencil;
+            } else if key_down(egui::Key::K) {
+                self.tools.current_tool = Tool::ColorBrush;
+            } else if key_down(egui::Key::E) {
+                self.tools.current_tool = Tool::Eraser;
+            } else if key_down(egui::Key::G) {
+                self.tools.current_tool = Tool::Fill;
+            } else if key_down(egui::Key::I) {
+                self.tools.current_tool = Tool::Pipette;
+            } else if key_down(egui::Key::P) {
+                self.tools.current_tool = Tool::ColorPipette;
+            } else if key_down(egui::Key::M) {
+                self.tools.current_tool = Tool::Select;
+            } else if key_down(egui::Key::R) {
+                self.tools.current_tool = Tool::DeleteRow;
+            } else if key_down(egui::Key::D) {
+                self.tools.current_tool = Tool::DeleteCol;
+            }
+        } else if !ctrl {
+            // Any printable key without Ctrl or Alt
             for event in &input.events {
                 if let egui::Event::Text(text) = event {
-                    if let Some(ch) = text.chars().next() {
-                        if !ch.is_control() {
+                    for ch in text.chars() {
+                        if ch.is_control() {
+                            continue;
+                        }
+                        if let Some(sel) = self.viewport.selection {
+                            if !self.viewport.is_typing {
+                                self.history.push_state(self.grid.clone());
+                                self.viewport.is_typing = true;
+                            }
+                            if sel.width() == 1 && sel.height() == 1 {
+                                // 1x1 frame: write char and advance frame to the next cell to the right
+                                self.grid.set_colored(sel.min_x, sel.min_y, ch, self.tools.brush_color);
+                                self.tools.brush_char = ch;
+                                if sel.min_x + 1 < self.grid.width {
+                                    let nx = sel.min_x + 1;
+                                    let ny = sel.min_y;
+                                    self.viewport.selection = Some(RectBounds::new(nx, ny, nx, ny));
+                                    self.viewport.text_cursor = Some((nx, ny));
+                                } else {
+                                    self.viewport.text_cursor = Some((sel.min_x, sel.min_y));
+                                }
+                            } else {
+                                // Multi-cell selection: typing into box starting at upper-left corner
+                                let (mut cx, mut cy) = self.viewport.text_cursor.unwrap_or((sel.min_x, sel.min_y));
+                                cx = cx.clamp(sel.min_x, sel.max_x);
+                                cy = cy.clamp(sel.min_y, sel.max_y);
+
+                                self.grid.set_colored(cx, cy, ch, self.tools.brush_color);
+                                self.tools.brush_char = ch;
+
+                                // Advance cursor to next cell, wrapping at selection right edge
+                                if cx < sel.max_x {
+                                    cx += 1;
+                                } else if cy < sel.max_y {
+                                    cx = sel.min_x;
+                                    cy += 1;
+                                }
+                                self.viewport.text_cursor = Some((cx, cy));
+                            }
+                        } else {
+                            // No selection: change active brush character
                             self.tools.brush_char = ch;
                         }
                     }
@@ -509,6 +799,7 @@ impl eframe::App for AsciiPaintApp {
             match action {
                 CanvasAction::StrokeStarted => {
                     self.history.push_state(self.grid.clone());
+                    self.viewport.is_typing = false;
                 }
                 CanvasAction::CellPainted(x, y, ch, color) => {
                     self.grid.set_colored(x, y, ch, color);
@@ -517,7 +808,6 @@ impl eframe::App for AsciiPaintApp {
                     self.grid.set_color(x, y, color);
                 }
                 CanvasAction::FloodFill(x, y, ch, color) => {
-                    self.history.push_state(self.grid.clone());
                     self.grid.flood_fill(x, y, ch, color, self.viewport.selection);
                 }
                 CanvasAction::PipetteSampled(ch, color) => {
@@ -558,11 +848,7 @@ impl eframe::App for AsciiPaintApp {
                     self.sidebar.resize_h_str = self.grid.height.to_string();
                 }
                 CanvasAction::Cut => {
-                    self.copy_to_clipboard(&ctx);
-                    if let Some(sel) = self.viewport.selection {
-                        self.history.push_state(self.grid.clone());
-                        self.grid.clear_region(sel);
-                    }
+                    self.cut_to_clipboard(&ctx);
                 }
                 CanvasAction::Copy => {
                     self.copy_to_clipboard(&ctx);
@@ -574,6 +860,8 @@ impl eframe::App for AsciiPaintApp {
                     if let Some(sel) = self.viewport.selection {
                         self.history.push_state(self.grid.clone());
                         self.grid.clear_region(sel);
+                        self.viewport.text_cursor = Some((sel.min_x, sel.min_y));
+                        self.viewport.is_typing = false;
                     }
                 }
                 CanvasAction::Crop => {
@@ -581,6 +869,8 @@ impl eframe::App for AsciiPaintApp {
                         self.history.push_state(self.grid.clone());
                         self.grid.crop(sel);
                         self.viewport.selection = None;
+                        self.viewport.text_cursor = None;
+                        self.viewport.is_typing = false;
                         self.sidebar.resize_w_str = self.grid.width.to_string();
                         self.sidebar.resize_h_str = self.grid.height.to_string();
                         self.set_toast("Cropped canvas to selection");
@@ -591,7 +881,18 @@ impl eframe::App for AsciiPaintApp {
                     self.modals.text_edit_buffer = self.grid.to_ascii_string();
                 }
                 CanvasAction::Deselect => {
+                    self.viewport.moving_block = None;
                     self.viewport.selection = None;
+                    self.viewport.text_cursor = None;
+                    self.viewport.is_typing = false;
+                }
+                CanvasAction::BlockMoved { grid_before, new_grid, new_bounds } => {
+                    self.history.push_state(grid_before);
+                    self.grid = new_grid;
+                    self.viewport.selection = Some(new_bounds);
+                    self.viewport.text_cursor = Some((new_bounds.min_x, new_bounds.min_y));
+                    self.viewport.is_typing = false;
+                    self.set_toast(format!("Moved block to ({}, {})", new_bounds.min_x, new_bounds.min_y));
                 }
             }
         }

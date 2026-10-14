@@ -86,6 +86,14 @@ impl RectBounds {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlockData {
+    pub width: usize,
+    pub height: usize,
+    pub cells: Vec<char>,
+    pub colors: Vec<ColorId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CanvasGrid {
     pub width: usize,
     pub height: usize,
@@ -541,21 +549,53 @@ impl CanvasGrid {
         }
     }
 
+    #[allow(dead_code)]
     pub fn copy_region(&self, bounds: RectBounds) -> String {
+        self.copy_region_block(bounds).1
+    }
+
+    pub fn copy_region_block(&self, bounds: RectBounds) -> (BlockData, String) {
         let min_x = bounds.min_x.min(self.width.saturating_sub(1));
         let max_x = bounds.max_x.min(self.width.saturating_sub(1));
         let min_y = bounds.min_y.min(self.height.saturating_sub(1));
         let max_y = bounds.max_y.min(self.height.saturating_sub(1));
 
-        let mut lines = Vec::new();
+        let w = max_x - min_x + 1;
+        let h = max_y - min_y + 1;
+        let mut cells = Vec::with_capacity(w * h);
+        let mut colors = Vec::with_capacity(w * h);
+        let mut lines = Vec::with_capacity(h);
+
         for y in min_y..=max_y {
-            let mut line = String::new();
+            let mut line = String::with_capacity(w);
             for x in min_x..=max_x {
-                line.push(self.cells[y * self.width + x]);
+                let idx = y * self.width + x;
+                cells.push(self.cells[idx]);
+                colors.push(self.colors[idx]);
+                line.push(self.cells[idx]);
             }
             lines.push(line);
         }
-        lines.join("\n")
+
+        let text = lines.join("\n");
+        (BlockData { width: w, height: h, cells, colors }, text)
+    }
+
+    pub fn paste_block(&mut self, dest_x: usize, dest_y: usize, block: &BlockData) {
+        for r in 0..block.height {
+            let y = dest_y + r;
+            if y >= self.height {
+                break;
+            }
+            for c in 0..block.width {
+                let x = dest_x + c;
+                if x >= self.width {
+                    break;
+                }
+                let idx = r * block.width + c;
+                self.set_colored(x, y, block.cells[idx], block.colors[idx]);
+            }
+        }
     }
 
     pub fn paste_region(&mut self, dest_x: usize, dest_y: usize, text: &str, transparent_space: bool, bounds: Option<RectBounds>) {
@@ -965,6 +1005,87 @@ mod tests {
     }
 
     #[test]
+    fn test_copy_region_block_and_paste_block() {
+        let mut grid = CanvasGrid::new(5, 5);
+        grid.set_colored(1, 1, 'X', ColorId::Red);
+        grid.set_colored(2, 1, 'Y', ColorId::Green);
+
+        let (block, text) = grid.copy_region_block(RectBounds::new(1, 1, 2, 1));
+        assert_eq!(text, "XY");
+        assert_eq!(block.width, 2);
+        assert_eq!(block.height, 1);
+        assert_eq!(block.cells, vec!['X', 'Y']);
+        assert_eq!(block.colors, vec![ColorId::Red, ColorId::Green]);
+
+        let mut grid2 = CanvasGrid::new(5, 5);
+        grid2.paste_block(3, 3, &block);
+        assert_eq!(grid2.get(3, 3), Some('X'));
+        assert_eq!(grid2.get_color(3, 3), Some(ColorId::Red));
+        assert_eq!(grid2.get(4, 3), Some('Y'));
+        assert_eq!(grid2.get_color(4, 3), Some(ColorId::Green));
+    }
+
+    #[test]
+    fn test_block_move_simulation_and_undo() {
+        let mut grid = CanvasGrid::new(6, 6);
+        // Original grid has a block [A, B] at (1, 1) and [C, D] at (1, 2)
+        grid.set_colored(1, 1, 'A', ColorId::BrightCyan);
+        grid.set_colored(2, 1, 'B', ColorId::BrightCyan);
+        grid.set_colored(1, 2, 'C', ColorId::BrightYellow);
+        grid.set_colored(2, 2, 'D', ColorId::BrightYellow);
+
+        // Under destination (3, 3) there are some existing cells '.'
+        grid.set_colored(3, 3, '.', ColorId::Default);
+        grid.set_colored(4, 3, '.', ColorId::Default);
+
+        let mut history = HistoryManager::new(10);
+        let orig_grid = grid.clone();
+
+        // 1. Pick up block bounds (1, 1) to (2, 2)
+        let bounds = RectBounds::new(1, 1, 2, 2);
+        let (block, _) = grid.copy_region_block(bounds);
+
+        // 2. Clear original bounds in moved grid
+        let mut new_grid = orig_grid.clone();
+        for r in bounds.min_y..=bounds.max_y {
+            for c in bounds.min_x..=bounds.max_x {
+                new_grid.set_colored(c, r, ' ', ColorId::Default);
+            }
+        }
+        // 3. Drop at new destination (3, 3), replacing existing '.' cells
+        new_grid.paste_block(3, 3, &block);
+
+        history.push_state(orig_grid.clone());
+        grid = new_grid;
+
+        // Verify: original location is now empty spaces
+        assert_eq!(grid.get(1, 1), Some(' '));
+        assert_eq!(grid.get(2, 1), Some(' '));
+        assert_eq!(grid.get(1, 2), Some(' '));
+        assert_eq!(grid.get(2, 2), Some(' '));
+
+        // Verify: destination location now has the block, replacing '.'
+        assert_eq!(grid.get(3, 3), Some('A'));
+        assert_eq!(grid.get_color(3, 3), Some(ColorId::BrightCyan));
+        assert_eq!(grid.get(4, 3), Some('B'));
+        assert_eq!(grid.get(3, 4), Some('C'));
+        assert_eq!(grid.get_color(3, 4), Some(ColorId::BrightYellow));
+        assert_eq!(grid.get(4, 4), Some('D'));
+
+        // 4. Test Undo
+        let restored = history.undo(grid.clone()).expect("History should have previous state");
+        grid = restored;
+
+        // Verify restored state matches original exactly
+        assert_eq!(grid.get(1, 1), Some('A'));
+        assert_eq!(grid.get(2, 1), Some('B'));
+        assert_eq!(grid.get(1, 2), Some('C'));
+        assert_eq!(grid.get(2, 2), Some('D'));
+        assert_eq!(grid.get(3, 3), Some('.'));
+        assert_eq!(grid.get(4, 3), Some('.'));
+    }
+
+    #[test]
     fn test_set_color_preserves_char() {
         let mut grid = CanvasGrid::new(5, 5);
         grid.set_colored(2, 3, '@', ColorId::Default);
@@ -980,5 +1101,84 @@ mod tests {
 
         // Out of bounds check
         assert!(!grid.set_color(10, 10, ColorId::Red));
+    }
+
+    #[test]
+    fn test_selection_typing_simulation() {
+        let mut grid = CanvasGrid::new(8, 6);
+        let sel = RectBounds::new(2, 1, 4, 3); // width = 3, height = 3 (columns 2, 3, 4; rows 1, 2, 3)
+
+        // Typing text starting at upper-left corner (2, 1)
+        let text_to_type = "ABCDEF";
+        let color = ColorId::BrightGreen;
+
+        let mut cx = sel.min_x;
+        let mut cy = sel.min_y;
+
+        for ch in text_to_type.chars() {
+            grid.set_colored(cx, cy, ch, color);
+            if cx < sel.max_x {
+                cx += 1;
+            } else if cy < sel.max_y {
+                cx = sel.min_x;
+                cy += 1;
+            }
+        }
+
+        // Row 1: (2, 1) = 'A', (3, 1) = 'B', (4, 1) = 'C'
+        assert_eq!(grid.get(2, 1), Some('A'));
+        assert_eq!(grid.get_color(2, 1), Some(ColorId::BrightGreen));
+        assert_eq!(grid.get(3, 1), Some('B'));
+        assert_eq!(grid.get(4, 1), Some('C'));
+
+        // Row 2: (2, 2) = 'D', (3, 2) = 'E', (4, 2) = 'F'
+        assert_eq!(grid.get(2, 2), Some('D'));
+        assert_eq!(grid.get(3, 2), Some('E'));
+        assert_eq!(grid.get(4, 2), Some('F'));
+
+        // Outside selection remains unchanged (' ')
+        assert_eq!(grid.get(1, 1), Some(' '));
+        assert_eq!(grid.get(5, 1), Some(' '));
+        assert_eq!(grid.get(2, 0), Some(' '));
+
+        // Test Backspace simulation from (4, 2)
+        // If cursor was at (4, 2), backspace clears it:
+        grid.set_colored(4, 2, ' ', ColorId::Default);
+        assert_eq!(grid.get(4, 2), Some(' '));
+        assert_eq!(grid.get_color(4, 2), Some(ColorId::Default));
+    }
+
+    #[test]
+    fn test_1x1_selection_typing_advancement() {
+        let mut grid = CanvasGrid::new(5, 5); // width 5, height 5
+        let mut sel = RectBounds::new(2, 1, 2, 1); // 1x1 frame at (2, 1)
+
+        let text = "XYZ";
+        for ch in text.chars() {
+            if sel.width() == 1 && sel.height() == 1 {
+                grid.set_colored(sel.min_x, sel.min_y, ch, ColorId::BrightCyan);
+                if sel.min_x + 1 < grid.width {
+                    sel = RectBounds::new(sel.min_x + 1, sel.min_y, sel.min_x + 1, sel.min_y);
+                }
+            }
+        }
+
+        assert_eq!(grid.get(2, 1), Some('X'));
+        assert_eq!(grid.get(3, 1), Some('Y'));
+        assert_eq!(grid.get(4, 1), Some('Z'));
+        // Frame should now be at (4, 1) because width is 5 (columns 0..=4)
+        assert_eq!(sel.min_x, 4);
+        assert_eq!(sel.max_x, 4);
+
+        // Typing another char at the end of the row stays at column 4 without wrapping to next row
+        let ch = '!';
+        grid.set_colored(sel.min_x, sel.min_y, ch, ColorId::BrightCyan);
+        if sel.min_x + 1 < grid.width {
+            sel = RectBounds::new(sel.min_x + 1, sel.min_y, sel.min_x + 1, sel.min_y);
+        }
+        assert_eq!(grid.get(4, 1), Some('!'));
+        assert_eq!(sel.min_x, 4);
+        assert_eq!(sel.min_y, 1);
+        assert_eq!(grid.get(0, 2), Some(' ')); // no wrapping
     }
 }

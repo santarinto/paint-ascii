@@ -4,6 +4,16 @@ use crate::model::{CanvasGrid, ColShiftMode, Direction, RectBounds, RowShiftMode
 use crate::theme::ThemeColors;
 use crate::tools::{Tool, ToolState};
 
+#[derive(Debug, Clone)]
+pub struct MovingBlockState {
+    pub bounds: RectBounds,
+    pub grab_offset: (usize, usize),
+    pub current_top_left: (usize, usize),
+    pub cells: Vec<char>,
+    pub colors: Vec<ColorId>,
+    pub grid_before_pickup: CanvasGrid,
+}
+
 pub struct ViewportState {
     #[allow(dead_code)]
     pub pan_offset: Vec2,
@@ -13,6 +23,9 @@ pub struct ViewportState {
     pub hovered_cell: Option<(usize, usize)>,
     pub selection: Option<RectBounds>,
     pub selection_drag_start: Option<(usize, usize)>,
+    pub text_cursor: Option<(usize, usize)>,
+    pub is_typing: bool,
+    pub moving_block: Option<MovingBlockState>,
     pub is_dragging_stroke: bool,
     pub is_panning: bool,
     pub last_drag_pos: Option<Pos2>,
@@ -31,6 +44,9 @@ impl Default for ViewportState {
             hovered_cell: None,
             selection: None,
             selection_drag_start: None,
+            text_cursor: None,
+            is_typing: false,
+            moving_block: None,
             is_dragging_stroke: false,
             is_panning: false,
             last_drag_pos: None,
@@ -59,6 +75,11 @@ pub enum CanvasAction {
     Crop,
     OpenTextEdit,
     Deselect,
+    BlockMoved {
+        grid_before: CanvasGrid,
+        new_grid: CanvasGrid,
+        new_bounds: RectBounds,
+    },
 }
 
 impl ViewportState {
@@ -117,8 +138,11 @@ pub fn render_canvas(
     let canvas_size = Vec2::new(grid.width as f32 * cell_size.x, grid.height as f32 * cell_size.y);
     let margin = 50.0;
 
+    let ctrl_down = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
+
     egui::ScrollArea::both()
         .auto_shrink([false, false])
+        .scroll([!ctrl_down, !ctrl_down])
         .show(ui, |ui| {
             let viewport_size = ui.available_size();
             let content_w = (canvas_size.x + margin * 2.0).max(viewport_size.x);
@@ -133,12 +157,35 @@ pub fn render_canvas(
             let canvas_rect = Rect::from_min_size(canvas_min, canvas_size);
 
             // Ctrl + Mouse wheel zooming
-            let ctrl_down = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
-            if ctrl_down && response.hovered() {
-                let scroll_delta = ui.input(|i| i.smooth_scroll_delta);
-                if scroll_delta.y != 0.0 {
-                    let zoom_change = scroll_delta.y * 0.0015;
-                    state.zoom = (state.zoom + zoom_change).clamp(0.25, 5.0);
+            let zoom_factor = ui.input(|i| {
+                let z = i.zoom_delta();
+                if (z - 1.0).abs() > 0.001 {
+                    return z;
+                }
+                if ctrl_down {
+                    for ev in &i.events {
+                        if let egui::Event::MouseWheel { delta, .. } = ev {
+                            if delta.y > 0.0 {
+                                return 1.15;
+                            } else if delta.y < 0.0 {
+                                return 1.0 / 1.15;
+                            }
+                        }
+                    }
+                    if i.smooth_scroll_delta.y > 0.0 {
+                        return 1.15;
+                    } else if i.smooth_scroll_delta.y < 0.0 {
+                        return 1.0 / 1.15;
+                    }
+                }
+                1.0
+            });
+
+            if (zoom_factor - 1.0).abs() > 0.001 {
+                if zoom_factor > 1.0 {
+                    state.zoom = (state.zoom * 1.15).min(5.0);
+                } else {
+                    state.zoom = (state.zoom / 1.15).max(0.25);
                 }
             }
 
@@ -180,8 +227,109 @@ pub fn render_canvas(
 
             let shift_down = ui.input(|i| i.modifiers.shift);
 
-            // Handle tool interactions
-            if let Some((col, row)) = state.hovered_cell {
+            // Handle block movement (drag & drop of selected region)
+            let is_on_selection = state.hovered_cell.map_or(false, |(c, r)| {
+                state.selection.map_or(false, |sel| sel.contains(c, r))
+            });
+
+            if state.moving_block.is_some() && primary_down {
+                // Currently dragging a block over the canvas
+                ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Move);
+                if let Some(pos) = mouse_pos {
+                    let rel_x = pos.x - canvas_rect.min.x;
+                    let rel_y = pos.y - canvas_rect.min.y;
+                    let col = (rel_x / cell_size.x).floor() as isize;
+                    let row = (rel_y / cell_size.y).floor() as isize;
+
+                    if let Some(ref mut moving) = state.moving_block {
+                        let block_w = moving.bounds.width();
+                        let block_h = moving.bounds.height();
+                        let max_x = grid.width.saturating_sub(block_w) as isize;
+                        let max_y = grid.height.saturating_sub(block_h) as isize;
+
+                        let target_x = (col - moving.grab_offset.0 as isize).clamp(0, max_x.max(0)) as usize;
+                        let target_y = (row - moving.grab_offset.1 as isize).clamp(0, max_y.max(0)) as usize;
+
+                        moving.current_top_left = (target_x, target_y);
+                        state.selection = Some(RectBounds::new(
+                            target_x,
+                            target_y,
+                            target_x + block_w - 1,
+                            target_y + block_h - 1,
+                        ));
+                    }
+                }
+            } else if !primary_down && state.moving_block.is_some() {
+                // Mouse released while moving a block -> commit move!
+                if let Some(moving) = state.moving_block.take() {
+                    let (new_min_x, new_min_y) = moving.current_top_left;
+                    let (orig_min_x, orig_min_y) = (moving.bounds.min_x, moving.bounds.min_y);
+                    let block_w = moving.bounds.width();
+                    let block_h = moving.bounds.height();
+                    let new_bounds = RectBounds::new(
+                        new_min_x,
+                        new_min_y,
+                        new_min_x + block_w - 1,
+                        new_min_y + block_h - 1,
+                    );
+
+                    if new_min_x != orig_min_x || new_min_y != orig_min_y {
+                        let mut new_grid = moving.grid_before_pickup.clone();
+                        // Clear original bounds
+                        for r in moving.bounds.min_y..=moving.bounds.max_y {
+                            for c in moving.bounds.min_x..=moving.bounds.max_x {
+                                new_grid.set_colored(c, r, ' ', ColorId::Default);
+                            }
+                        }
+                        // Write block at new destination
+                        for r in 0..block_h {
+                            for c in 0..block_w {
+                                let idx = r * block_w + c;
+                                new_grid.set_colored(new_min_x + c, new_min_y + r, moving.cells[idx], moving.colors[idx]);
+                            }
+                        }
+
+                        actions.push(CanvasAction::BlockMoved {
+                            grid_before: moving.grid_before_pickup,
+                            new_grid,
+                            new_bounds,
+                        });
+                    }
+                    state.selection = Some(new_bounds);
+                }
+            } else if is_on_selection && !shift_down && !state.is_panning && tools.current_tool == Tool::Select {
+                // Hovering over selected block with Select tool: show 4-arrow move cursor and initiate drag on click
+                ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Move);
+                if primary_down && !state.is_dragging_stroke {
+                    if let Some((col, row)) = state.hovered_cell {
+                        state.text_cursor = Some((col, row));
+                        if let Some(sel) = state.selection {
+                            let grab_offset = (col - sel.min_x, row - sel.min_y);
+                            let block_w = sel.width();
+                            let block_h = sel.height();
+                            let mut block_cells = Vec::with_capacity(block_w * block_h);
+                            let mut block_colors = Vec::with_capacity(block_w * block_h);
+                            for r in sel.min_y..=sel.max_y {
+                                for c in sel.min_x..=sel.max_x {
+                                    let idx = r * grid.width + c;
+                                    block_cells.push(grid.cells[idx]);
+                                    block_colors.push(grid.colors[idx]);
+                                }
+                            }
+                            state.moving_block = Some(MovingBlockState {
+                                bounds: sel,
+                                grab_offset,
+                                current_top_left: (sel.min_x, sel.min_y),
+                                cells: block_cells,
+                                colors: block_colors,
+                                grid_before_pickup: grid.clone(),
+                            });
+                            state.is_dragging_stroke = true;
+                        }
+                    }
+                }
+            } else if let Some((col, row)) = state.hovered_cell {
+                // Cursor icon overrides for tools
                 if tools.current_tool == Tool::ColorBrush
                     || tools.current_tool == Tool::ColorPipette
                     || tools.current_tool == Tool::Pipette
@@ -189,6 +337,7 @@ pub fn render_canvas(
                     ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Crosshair);
                 }
 
+                // Regular tool interactions
                 if (shift_down || state.selection_drag_start.is_some()) && !state.is_panning && tools.current_tool != Tool::Scroll {
                     ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Crosshair);
                     if primary_down {
@@ -196,8 +345,12 @@ pub fn render_canvas(
                             state.is_dragging_stroke = true;
                             state.selection_drag_start = Some((col, row));
                             state.selection = Some(RectBounds::new(col, row, col, row));
+                            state.text_cursor = Some((col, row));
+                            state.is_typing = false;
                         } else if let Some((start_c, start_r)) = state.selection_drag_start {
-                            state.selection = Some(RectBounds::new(start_c, start_r, col, row));
+                            let bounds = RectBounds::new(start_c, start_r, col, row);
+                            state.selection = Some(bounds);
+                            state.text_cursor = Some((bounds.min_x, bounds.min_y));
                         }
                     }
                 } else if tools.current_tool == Tool::Zoom {
@@ -249,15 +402,17 @@ pub fn render_canvas(
                                 let color = grid.get_color(col, row).unwrap_or(ColorId::Default);
                                 actions.push(CanvasAction::ColorPipetteSampled(color));
                             }
-                            Tool::ColorBrush => {
-                                actions.push(CanvasAction::CellColorPainted(col, row, tools.brush_color));
-                            }
                             Tool::Select => {
                                 state.selection_drag_start = Some((col, row));
                                 state.selection = Some(RectBounds::new(col, row, col, row));
+                                state.text_cursor = Some((col, row));
+                                state.is_typing = false;
                             }
                             Tool::Pencil => {
                                 actions.push(CanvasAction::CellPainted(col, row, tools.brush_char, tools.brush_color));
+                            }
+                            Tool::ColorBrush => {
+                                actions.push(CanvasAction::CellColorPainted(col, row, tools.brush_color));
                             }
                             Tool::Eraser => {
                                 actions.push(CanvasAction::CellPainted(col, row, ' ', ColorId::Default));
@@ -278,7 +433,9 @@ pub fn render_canvas(
                             }
                             Tool::Select => {
                                 if let Some((start_c, start_r)) = state.selection_drag_start {
-                                    state.selection = Some(RectBounds::new(start_c, start_r, col, row));
+                                    let bounds = RectBounds::new(start_c, start_r, col, row);
+                                    state.selection = Some(bounds);
+                                    state.text_cursor = Some((bounds.min_x, bounds.min_y));
                                 }
                             }
                             _ => {}
@@ -339,9 +496,26 @@ pub fn render_canvas(
                     painter.rect_filled(cell_rect, 0.0, bg_color);
                     painter.rect_stroke(cell_rect, 0.0, Stroke::new(0.5, theme.cell_border), egui::StrokeKind::Outside);
 
-                    let idx = row * grid.width + col;
-                    let ch = grid.cells[idx];
-                    let col_id = grid.colors[idx];
+                    let (ch, col_id) = if let Some(ref moving) = state.moving_block {
+                        let block_w = moving.bounds.width();
+                        let block_h = moving.bounds.height();
+                        let (top_x, top_y) = moving.current_top_left;
+                        if col >= top_x && col < top_x + block_w && row >= top_y && row < top_y + block_h {
+                            let block_c = col - top_x;
+                            let block_r = row - top_y;
+                            let idx = block_r * block_w + block_c;
+                            (moving.cells[idx], moving.colors[idx])
+                        } else if moving.bounds.contains(col, row) {
+                            (' ', ColorId::Default)
+                        } else {
+                            let idx = row * grid.width + col;
+                            (grid.cells[idx], grid.colors[idx])
+                        }
+                    } else {
+                        let idx = row * grid.width + col;
+                        (grid.cells[idx], grid.colors[idx])
+                    };
+
                     if ch != ' ' {
                         let text = ch.to_string();
                         let text_pos = cell_rect.center();
@@ -371,12 +545,34 @@ pub fn render_canvas(
                 }
             }
 
-            // Selection border overlay
+            // Selection border overlay and blinking text cursor
             if let Some(sel) = state.selection {
                 let top_left = state.cell_rect(sel.min_x, sel.min_y, canvas_rect);
                 let bottom_right = state.cell_rect(sel.max_x, sel.max_y, canvas_rect);
                 let sel_rect = Rect::from_min_max(top_left.min, bottom_right.max);
                 painter.rect_stroke(sel_rect, 0.0, Stroke::new(1.5, theme.accent), egui::StrokeKind::Outside);
+
+                // Blinking text cursor inside selection
+                let (cx, cy) = state.text_cursor.unwrap_or((sel.min_x, sel.min_y));
+                if sel.contains(cx, cy) && state.moving_block.is_none() {
+                    let cur_cell_rect = state.cell_rect(cx, cy, canvas_rect);
+                    let time = ui.input(|i| i.time);
+                    let is_blink_on = (time * 2.0).fract() < 0.55;
+                    if is_blink_on {
+                        painter.line_segment(
+                            [cur_cell_rect.left_top(), cur_cell_rect.left_bottom()],
+                            Stroke::new(2.5, theme.accent),
+                        );
+                        painter.line_segment(
+                            [
+                                cur_cell_rect.left_bottom() - Vec2::new(0.0, 1.0),
+                                cur_cell_rect.right_bottom() - Vec2::new(0.0, 1.0),
+                            ],
+                            Stroke::new(2.0, theme.accent),
+                        );
+                    }
+                    ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+                }
             }
 
             // Draw 4-side [+] and [-] border controls matching reference

@@ -64,19 +64,19 @@ pub fn render_top_menu(
         if btn("📄", "New txt file", true) {
             triggered_action = Some(MenuAction::New);
         }
-        if btn("📂", "Load txt file (Alt+O)", true) {
+        if btn("📂", "Load txt / ANSI file (Ctrl+O / Alt+O)", true) {
             triggered_action = Some(MenuAction::Load);
         }
-        if btn("💾", "Save txt file (Alt+S)", true) {
+        if btn("💾", "Save txt file (Ctrl+S / Alt+S)", true) {
             triggered_action = Some(MenuAction::Save);
         }
-        if btn("💾 ANSI", "Export ANSI art with colors (.ans / .ansi)", true) {
+        if btn("💾 ANSI", "Export ANSI art (.ans / .ansi / .txt)", true) {
             triggered_action = Some(MenuAction::ExportAnsi);
         }
-        if btn("↩", "Undo (Alt+Z)", can_undo) {
+        if btn("↩", "Undo (Ctrl+Z / Alt+Z)", can_undo) {
             triggered_action = Some(MenuAction::Undo);
         }
-        if btn("↪", "Redo (Alt+Shift+Z)", can_redo) {
+        if btn("↪", "Redo (Ctrl+Y / Ctrl+Shift+Z / Alt+Shift+Z)", can_redo) {
             triggered_action = Some(MenuAction::Redo);
         }
         if btn("ℹ", "About ASCII Art paint", true) {
@@ -85,15 +85,26 @@ pub fn render_top_menu(
         if btn("✏", "Text input modal", true) {
             triggered_action = Some(MenuAction::TextInput);
         }
-        if btn("📋", "Copy text to clipboard (Alt+C)", true) {
+        if btn("📋", "Copy text to clipboard & RAM (Ctrl+C / Alt+C)", true) {
             triggered_action = Some(MenuAction::Copy);
         }
-        if btn("📥", "Import from clipboard (auto-expands canvas) (Alt+V)", true) {
+        if btn("📥", "Import from clipboard (auto-expands canvas) (Ctrl+V / Alt+V)", true) {
             triggered_action = Some(MenuAction::ImportClipboard);
         }
         if btn("🌓", "Toggle light / dark theme", true) {
             triggered_action = Some(MenuAction::ToggleTheme);
         }
+
+        ui.separator();
+
+        // --- Console / TUI Profile Selector ---
+        egui::ComboBox::from_id_salt("console_profile_combo")
+            .selected_text(format!("📺 {}", console_profile.name()))
+            .show_ui(ui, |ui| {
+                for p in crate::theme::ConsoleProfile::ALL {
+                    ui.selectable_value(console_profile, p, p.name());
+                }
+            });
 
         // --- Contextual Settings for DeleteRow / DeleteCol ---
         if tools.current_tool == Tool::DeleteRow {
@@ -148,19 +159,6 @@ pub fn render_top_menu(
 
         ui.separator();
 
-        // --- Console Profile Selector ---
-        ui.label(egui::RichText::new("Terminal:").size(12.0).color(theme.text_muted));
-        egui::ComboBox::from_id_salt("console_profile_selector")
-            .selected_text(console_profile.name())
-            .width(135.0)
-            .show_ui(ui, |ui| {
-                for profile in crate::theme::ConsoleProfile::ALL {
-                    ui.selectable_value(console_profile, profile, profile.name());
-                }
-            });
-
-        ui.separator();
-
         // --- 16-Color Fixed ANSI Palette in a Single Horizontal Row ---
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing = Vec2::new(3.0, 0.0);
@@ -171,6 +169,33 @@ pub fn render_top_menu(
             for &color in &ColorId::PALETTE_BRIGHT {
                 render_color_swatch(ui, tools, color, theme);
             }
+        });
+
+        ui.separator();
+
+        // --- Selection & Block Movement Hint in Top Bar ("в шапке") ---
+        let hint_resp = ui.add(
+            egui::Label::new(
+                egui::RichText::new("💡 Shift: рамка | Печать: текст | Esc: снять")
+                    .size(11.5)
+                    .color(theme.accent),
+            )
+            .sense(Sense::hover()),
+        );
+        hint_resp.on_hover_ui(|ui| {
+            ui.label(egui::RichText::new("Выделение и печать текста:").strong());
+            ui.label("• Shift + ЛКМ или инструмент ⛶ — выделить прямоугольную область");
+            ui.label("• Печать клавиш при выделении — ввод текста в рамку с верхнего левого угла");
+            ui.label("• Esc — снять выделение / отменить перетаскивание блока");
+            ui.label("• Backspace / Enter / Стрелки — редактирование и навигация в рамке");
+            ui.label("• Инструмент ⛶ (выделение) — перетащить блок курсором ✥");
+            ui.label("• 💧 Пипетка символа (Alt+I) — взять символ и переключиться в ✏ Карандаш");
+            ui.label("• 🎨 Пипетка цвета (Alt+P) — взять цвет и переключиться в 🖌 Кисть");
+            ui.label("• 🖌 Кисть цвета (Alt+K) — раскрашивает символы в выбранный цвет");
+            ui.label("• Ctrl+C / Ctrl+X — копировать / вырезать в ОЗУ и буфер");
+            ui.label("• Ctrl+V — вставить блок");
+            ui.label("• Delete — очистить содержимое выделения");
+            ui.label("• Ctrl+Z / Ctrl+Y — отмена и повтор");
         });
 
         // --- Hovered Cell Coordinates on the Right ---
