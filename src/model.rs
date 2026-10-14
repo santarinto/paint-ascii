@@ -135,6 +135,15 @@ impl CanvasGrid {
         true
     }
 
+    pub fn set_color(&mut self, x: usize, y: usize, color: ColorId) -> bool {
+        if x >= self.width || y >= self.height {
+            return false;
+        }
+        let index = y * self.width + x;
+        self.colors[index] = color;
+        true
+    }
+
     #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.cells.fill(' ');
@@ -949,5 +958,23 @@ mod tests {
         assert_eq!(grid.get_color(0, 1), Some(ColorId::BrightGreen));
         assert_eq!(grid.get(1, 1), Some('K'));
         assert_eq!(grid.get_color(1, 1), Some(ColorId::BrightGreen));
+    }
+
+    #[test]
+    fn test_set_color_preserves_char() {
+        let mut grid = CanvasGrid::new(5, 5);
+        grid.set_colored(2, 3, '@', ColorId::Default);
+        assert_eq!(grid.get(2, 3), Some('@'));
+        assert_eq!(grid.get_color(2, 3), Some(ColorId::Default));
+
+        // Use set_color (ColorBrush behavior)
+        let ok = grid.set_color(2, 3, ColorId::BrightMagenta);
+        assert!(ok);
+        // Character remains '@', only color changed to BrightMagenta
+        assert_eq!(grid.get(2, 3), Some('@'));
+        assert_eq!(grid.get_color(2, 3), Some(ColorId::BrightMagenta));
+
+        // Out of bounds check
+        assert!(!grid.set_color(10, 10, ColorId::Red));
     }
 }

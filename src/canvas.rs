@@ -44,8 +44,10 @@ impl Default for ViewportState {
 pub enum CanvasAction {
     StrokeStarted,
     CellPainted(usize, usize, char, ColorId),
+    CellColorPainted(usize, usize, ColorId),
     FloodFill(usize, usize, char, ColorId),
     PipetteSampled(char, ColorId),
+    ColorPipetteSampled(ColorId),
     DeleteRow(usize, RowShiftMode),
     DeleteCol(usize, ColShiftMode),
     AddCells(Direction, usize),
@@ -180,6 +182,13 @@ pub fn render_canvas(
 
             // Handle tool interactions
             if let Some((col, row)) = state.hovered_cell {
+                if tools.current_tool == Tool::ColorBrush
+                    || tools.current_tool == Tool::ColorPipette
+                    || tools.current_tool == Tool::Pipette
+                {
+                    ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Crosshair);
+                }
+
                 if (shift_down || state.selection_drag_start.is_some()) && !state.is_panning && tools.current_tool != Tool::Scroll {
                     ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Crosshair);
                     if primary_down {
@@ -236,6 +245,13 @@ pub fn render_canvas(
                                     actions.push(CanvasAction::PipetteSampled(ch, color));
                                 }
                             }
+                            Tool::ColorPipette => {
+                                let color = grid.get_color(col, row).unwrap_or(ColorId::Default);
+                                actions.push(CanvasAction::ColorPipetteSampled(color));
+                            }
+                            Tool::ColorBrush => {
+                                actions.push(CanvasAction::CellColorPainted(col, row, tools.brush_color));
+                            }
                             Tool::Select => {
                                 state.selection_drag_start = Some((col, row));
                                 state.selection = Some(RectBounds::new(col, row, col, row));
@@ -253,6 +269,9 @@ pub fn render_canvas(
                         match tools.current_tool {
                             Tool::Pencil => {
                                 actions.push(CanvasAction::CellPainted(col, row, tools.brush_char, tools.brush_color));
+                            }
+                            Tool::ColorBrush => {
+                                actions.push(CanvasAction::CellColorPainted(col, row, tools.brush_color));
                             }
                             Tool::Eraser => {
                                 actions.push(CanvasAction::CellPainted(col, row, ' ', ColorId::Default));

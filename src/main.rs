@@ -220,12 +220,16 @@ impl AsciiPaintApp {
                 self.tools.current_tool = Tool::Zoom;
             } else if input.key_pressed(egui::Key::B) {
                 self.tools.current_tool = Tool::Pencil;
+            } else if input.key_pressed(egui::Key::K) {
+                self.tools.current_tool = Tool::ColorBrush;
             } else if input.key_pressed(egui::Key::E) {
                 self.tools.current_tool = Tool::Eraser;
             } else if input.key_pressed(egui::Key::G) {
                 self.tools.current_tool = Tool::Fill;
             } else if input.key_pressed(egui::Key::I) {
                 self.tools.current_tool = Tool::Pipette;
+            } else if input.key_pressed(egui::Key::P) {
+                self.tools.current_tool = Tool::ColorPipette;
             } else if input.key_pressed(egui::Key::M) {
                 self.tools.current_tool = Tool::Select;
             } else if input.key_pressed(egui::Key::R) {
@@ -494,6 +498,9 @@ impl eframe::App for AsciiPaintApp {
                 CanvasAction::CellPainted(x, y, ch, color) => {
                     self.grid.set_colored(x, y, ch, color);
                 }
+                CanvasAction::CellColorPainted(x, y, color) => {
+                    self.grid.set_color(x, y, color);
+                }
                 CanvasAction::FloodFill(x, y, ch, color) => {
                     self.history.push_state(self.grid.clone());
                     self.grid.flood_fill(x, y, ch, color, self.viewport.selection);
@@ -501,7 +508,17 @@ impl eframe::App for AsciiPaintApp {
                 CanvasAction::PipetteSampled(ch, color) => {
                     self.tools.brush_char = ch;
                     self.tools.brush_color = color;
-                    self.set_toast(format!("Picked: '{}' ({})", ch, color.name()));
+                    if self.tools.current_tool == Tool::Pipette {
+                        self.tools.current_tool = Tool::Pencil;
+                    }
+                    self.set_toast(format!("Picked: '{}' ({}) -> Pencil", ch, color.name()));
+                }
+                CanvasAction::ColorPipetteSampled(color) => {
+                    self.tools.brush_color = color;
+                    if self.tools.current_tool == Tool::ColorPipette {
+                        self.tools.current_tool = Tool::ColorBrush;
+                    }
+                    self.set_toast(format!("Picked color: {} -> Brush", color.name()));
                 }
                 CanvasAction::DeleteRow(row, mode) => {
                     self.history.push_state(self.grid.clone());
